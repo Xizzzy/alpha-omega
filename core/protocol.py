@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""protocol.py — Alpha-Omega debate protocol orchestrator.
+
+The core of the dual-brain thinking tool.
+Implements: blind research -> exchange -> rebuttal -> resolution -> artifacts.
+
+Python 3.9 compatible.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+
+from .primitives import run_alpha, run_omega, parse_json_response
+from .context_builder import build_context
+from .sigma import resolve as sigma_resolve
+from .artifacts import generate_artifact_pack
+
+log = logging.getLogger("ao.protocol")
+
+# ---------------------------------------------------------------------------
+# Prompt templates
+# ---------------------------------------------------------------------------
+
+BLIND_MEMO_PROMPT = """You are participating in an Alpha-Omega dual-brain design session.
+
+## Your role: {role}
+
+You are one of two genuinely different AI systems analyzing the same problem.
+The other brain will analyze it independently — you will NOT see their conclusions
+until after you commit yours. This is intentional: different blind spots produce
+better outcomes than one brain reviewing another's work.
+
+## Project context
+
+{context}
+
+## The problem / idea to analyze
+
+{question}
+
+## Your task
+
+Analyze this independently. Research if needed. Then produce a STRUCTURED response
+as JSON with these exact keys:
+
+```json
+{{
+    "options": [
+        {{
+            "name": "short option name",
+            "thesis": "1-3 sentences: what this option is and why it works",
+            "evidence_quality": 0.0-1.0,
+            "constraint_fit": 0.0-1.0,
+            "feasibility": 0.0-1.0,
+            "reversibility": 0.0-1.0,
+            "expected_impact": 0.0-1.0,
+            "time_to_learning": 0.0-1.0,
+            "pros": ["..."],
+            "cons": ["..."]
+        }}
+    ],
+    "recommendation": "name of your recommended option",
+    "confidence": 0.0-1.0,
+    "assumptions": ["things that must be true for your recommendation to work"],
+    "what_would_change_mind": "what evidence would make you switch to a different option",
+    "open_questions": ["things you don't know that matter"],
+    "blind_spots_i_might_have": "honest assessment of what you might be missing"
+}}
+```
+
+Rules:
+- Generate 2-4 options (not just one)
+- Score each option honestly (don't inflate your recommendation)
+- The "blind_spots_i_might_have" field is critical — this is what the other brain will check
+- If you need to search for information, do it before answering
+- Be concrete, not abstract. Names, numbers, architectures — not "consider various approaches"
+"""
+
+CRITIQUE_PROMPT = """You are in the CRITIQUE phase of an Alpha-Omega debate.
+
+## Your role: {role}
+
+You previously submitted your independent memo (below). Now you can see
+the other brain's memo. Your job is NOT to agree or disagree reflexively.
+
+## Your task
+
+1. **Steelman first**: show you understand the other brain's position charitably
+2. **Then critique**: what did they miss? What blind spots do you see?
+3. **Concede where warranted**: if they found something you missed, say so explicitly
+4. **Final position**: do you change your recommendation, or hold?
+
+## Your original memo
+```json
+{own_memo}
+```
+
+## The other brain's memo
+```json
+{other_memo}
+```
+
+Respond as JSON:
+```json
+{{
+    "steelman": "1-2 sentences: the strongest version of their argument",
+    "critiques": [
+        {{
+            "text": "what they missed or got wrong",
+            "severity": "minor|moderate|major",
+            "evidence": "why you believe this"
+        }}
+    ],
+    "concessions": [
+        {{
+            "text": "what they found that you missed",
+            "impact": "how this changes your analysis"
+        }}
+    ],
+    "final_recommendation": "your updated recommendation (may be same or changed)",
+    "confidence": 0.0-1.0,
+    "resolution_suggestion": "ADOPT|ADOPT_WITH_DISSENT|RUN_EXPERIMENT|NEEDS_USER_CHOICE"
+}}
+```
+
+Rules:
+- You MUST steelman before critiquing (show you understood their position)
+- Empty concessions list = you learned nothing from them. This is unlikely — be honest.
+- If their option is genuinely better, switch. Ego is not a design criterion.
+"""
+
+# ---------------------------------------------------------------------------
+# Session class
+# ---------------------------------------------------------------------------
+
+
+class DebateSession:
+    """Orchestrates a single Alpha-Omega debate session."""
+
+    def __init__(self, question, project_dir=None, extra_files=None, mode="explore"):
+        self.question = question
+        self.project_dir = project_dir or os.getcwd()
+        self.extra_files = extra_files or []
+        self.mode = mode  # explore | specify | build | audit
+        self.session_id = "ao_%d" % int(time.time())
+
+        self.context = None
+        self.alpha_memo = None
+        self.omega_memo = None
+        self.alpha_critique = None
+        self.omega_critique = None
+        self.sigma_result = None
+        self.artifact_pack = None
+
+        self._start_time = time.time()
+
+    def run(self):
+        """Execute the full debate protocol. Returns artifact pack dict."""
+        log.info("=== AO Session %s started ===", self.session_id)
+        log.info("Question: %s", self.question[:200])
+
+        # Phase 1: Build context
+        log.info("Phase 1: Building project context...")
+        self.context = build_context(self.project_dir, self.extra_files)
+
+        # Phase 2: Blind independent research
+        log.info("Phase 2: Blind independent memos...")
+        self.alpha_memo = self._get_blind_memo("Alpha")
+        self.omega_memo = self._get_blind_memo("Omega")
+
+        if not self.alpha_memo.get("_parse_ok") and not self.omega_memo.get("_parse_ok"):
+            log.error("Both brains failed to produce valid memos. Aborting.")
+            return {
+                "error": "Both brains failed",
+                "alpha_raw": self.alpha_memo,
+                "omega_raw": self.omega_memo,
+            }
+
+        # Phase 3: Cross-examination
+        log.info("Phase 3: Cross-examination...")
+        self.alpha_critique = self._get_critique("Alpha", self.alpha_memo, self.omega_memo)
+        self.omega_critique = self._get_critique("Omega", self.omega_memo, self.alpha_memo)
+
+        # Phase 4: Sigma resolution
+        log.info("Phase 4: Design Sigma resolution...")
+        debate_rounds = self._build_debate_rounds()
+        self.sigma_result = sigma_resolve(self.alpha_memo, self.omega_memo, debate_rounds)
+        log.info("Resolution: %s", self.sigma_result.get("resolution"))
+
+        # Phase 5: Generate artifact pack
+        log.info("Phase 5: Generating artifact pack...")
+        self.artifact_pack = generate_artifact_pack(
+            question=self.question,
+            alpha_memo=self.alpha_memo,
+            omega_memo=self.omega_memo,
+            alpha_critique=self.alpha_critique,
+            omega_critique=self.omega_critique,
+            sigma_result=self.sigma_result,
+            mode=self.mode,
+            session_id=self.session_id,
+        )
+
+        duration = time.time() - self._start_time
+        log.info("=== AO Session %s completed in %.0fs ===", self.session_id, duration)
+
+        return self.artifact_pack
+
+    def _get_blind_memo(self, role):
+        """Get independent memo from one brain (blind phase)."""
+        prompt = BLIND_MEMO_PROMPT.format(
+            role=role,
+            context=self.context["context_text"],
+            question=self.question,
+        )
+
+        log.info("Requesting blind memo from %s...", role)
+        if role == "Alpha":
+            raw, usage = run_alpha(prompt, work_dir=self.project_dir)
+        else:
+            raw, usage = run_omega(prompt, work_dir=self.project_dir)
+
+        log.info("%s memo: %d chars, tokens: %s", role, len(raw), usage)
+
+        parsed = parse_json_response(raw, source=role)
+        if not parsed.get("_parse_ok"):
+            log.warning("%s memo failed to parse as JSON, using raw text", role)
+            # Wrap raw text in a minimal structure so the protocol can continue
+            parsed = {
+                "_source": role,
+                "_parse_ok": False,
+                "options": [],
+                "recommendation": "",
+                "confidence": 0.3,
+                "assumptions": [],
+                "what_would_change_mind": "",
+                "open_questions": [],
+                "raw_text": raw[:3000],
+            }
+        return parsed
+
+    def _get_critique(self, role, own_memo, other_memo):
+        """Get critique from one brain after seeing the other's memo."""
+        # Sanitize memos for prompt (remove internal fields)
+        own_clean = {k: v for k, v in own_memo.items() if not k.startswith("_")}
+        other_clean = {k: v for k, v in other_memo.items() if not k.startswith("_")}
+
+        prompt = CRITIQUE_PROMPT.format(
+            role=role,
+            own_memo=json.dumps(own_clean, indent=2, default=str),
+            other_memo=json.dumps(other_clean, indent=2, default=str),
+        )
+
+        log.info("Requesting critique from %s...", role)
+        if role == "Alpha":
+            raw, usage = run_alpha(prompt, work_dir=self.project_dir)
+        else:
+            raw, usage = run_omega(prompt, work_dir=self.project_dir)
+
+        log.info("%s critique: %d chars, tokens: %s", role, len(raw), usage)
+
+        parsed = parse_json_response(raw, source=role)
+        if not parsed.get("_parse_ok"):
+            log.warning("%s critique failed to parse, using empty", role)
+            parsed = {
+                "_source": role,
+                "_parse_ok": False,
+                "steelman": "",
+                "critiques": [],
+                "concessions": [],
+                "final_recommendation": own_memo.get("recommendation", ""),
+                "confidence": own_memo.get("confidence", 0.5),
+                "raw_text": raw[:3000],
+            }
+        return parsed
+
+    def _build_debate_rounds(self):
+        """Structure debate data for Sigma."""
+        rounds = []
+        if self.alpha_critique:
+            rounds.append({
+                "speaker": "alpha",
+                "critiques": self.alpha_critique.get("critiques", []),
+                "concessions": self.alpha_critique.get("concessions", []),
+            })
+        if self.omega_critique:
+            rounds.append({
+                "speaker": "omega",
+                "critiques": self.omega_critique.get("critiques", []),
+                "concessions": self.omega_critique.get("concessions", []),
+            })
+        return rounds
