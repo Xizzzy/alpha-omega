@@ -65,7 +65,14 @@ def build_context(project_dir=None, extra_files=None):
                 files[rel_path] = content
             total_chars += len(content)
 
-    # 2. Collect .alpha-omega/debates/ (latest 3)
+    # 2. Auto-discover project structure and key files
+    if total_chars < MAX_CONTEXT_CHARS - 5000:
+        scaffold = _build_project_scaffold(project_dir)
+        if scaffold:
+            files["[project scaffold]"] = scaffold
+            total_chars += len(scaffold)
+
+    # 3. Collect .alpha-omega/debates/ (latest 3)
     debates_dir = os.path.join(project_dir, ".alpha-omega", "debates")
     if os.path.isdir(debates_dir):
         debate_files = sorted(
@@ -81,7 +88,7 @@ def build_context(project_dir=None, extra_files=None):
             ao_memory[rel] = content
             total_chars += len(content)
 
-    # 3. Extra files explicitly requested (contained to project dir)
+    # 4. Extra files explicitly requested (contained to project dir)
     if extra_files:
         project_real = os.path.realpath(project_dir)
         for path in extra_files:
@@ -98,7 +105,7 @@ def build_context(project_dir=None, extra_files=None):
                 files[rel] = content
                 total_chars += len(content)
 
-    # 4. Build formatted context text
+    # 5. Build formatted context text
     context_text = _format_context(project_name, files, ao_memory)
 
     return {
@@ -220,6 +227,95 @@ def build_review_context(project_dir=None, scope="unstaged"):
         "new_files": new_files,
         "context_text": context_text,
     }
+
+
+# ---------------------------------------------------------------------------
+# Project scaffold auto-discovery
+# ---------------------------------------------------------------------------
+
+# Manifest/config files to auto-include (small, high-signal)
+_MANIFEST_FILES = [
+    "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
+    "Makefile", "Dockerfile", "docker-compose.yml",
+    "requirements.txt", "setup.py", "setup.cfg",
+    "tsconfig.json", ".eslintrc.json",
+]
+
+# Max chars for scaffold section
+_SCAFFOLD_BUDGET = 6000
+
+
+def _build_project_scaffold(project_dir):
+    """Build compact project scaffold: directory tree + manifests + entrypoints."""
+    parts = []
+    budget_left = _SCAFFOLD_BUDGET
+
+    # 1. Directory tree (compact, 2 levels deep)
+    tree = _dir_tree(project_dir, max_depth=2)
+    if tree:
+        tree_text = "Directory structure:\n%s" % tree
+        if len(tree_text) < budget_left:
+            parts.append(tree_text)
+            budget_left -= len(tree_text)
+
+    # 2. Manifest/config files (full content, small files)
+    for fname in _MANIFEST_FILES:
+        if budget_left < 200:
+            break
+        fpath = os.path.join(project_dir, fname)
+        if os.path.isfile(fpath):
+            content = _read_truncated(fpath, min(1500, budget_left))
+            if content.strip():
+                entry = "%s:\n%s" % (fname, content)
+                parts.append(entry)
+                budget_left -= len(entry)
+
+    if not parts:
+        return ""
+
+    return "\n\n".join(parts)
+
+
+def _dir_tree(root, max_depth=2, prefix=""):
+    """Generate compact directory tree string, skipping hidden/generated dirs."""
+    skip_dirs = {
+        ".git", ".alpha-omega", "node_modules", "__pycache__", ".venv",
+        "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
+        ".next", ".nuxt", "target", "vendor", ".idea", ".vscode",
+        "egg-info", ".egg-info",
+    }
+    skip_suffixes = (".pyc", ".pyo", ".egg-info")
+
+    lines = []
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return ""
+
+    dirs = []
+    files = []
+    for e in entries:
+        if e.startswith(".") and e not in (".env.example",):
+            continue
+        full = os.path.join(root, e)
+        if os.path.isdir(full):
+            if e not in skip_dirs and not e.endswith(skip_suffixes):
+                dirs.append(e)
+        else:
+            if not e.endswith(skip_suffixes):
+                files.append(e)
+
+    for f in files:
+        lines.append("%s%s" % (prefix, f))
+
+    for d in dirs:
+        lines.append("%s%s/" % (prefix, d))
+        if max_depth > 1:
+            sub = _dir_tree(os.path.join(root, d), max_depth - 1, prefix + "  ")
+            if sub:
+                lines.append(sub)
+
+    return "\n".join(lines) if lines else ""
 
 
 def _diff_args_for_scope(scope, project_dir):

@@ -54,7 +54,7 @@ class BrainResult:
 
 
 def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None,
-              max_turns=3, phase="unknown"):
+              max_turns=5, phase="unknown"):
     """Run Claude CLI non-interactively. Returns BrainResult.
 
     Alpha = Claude. Uses `claude --print` with JSON output for usage tracking.
