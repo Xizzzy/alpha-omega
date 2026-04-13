@@ -698,7 +698,7 @@ def cmd_implement(args):
             result = run_alpha(prompt, timeout=timeout, model=model,
                                work_dir=project_dir,
                                max_turns=config["implement_max_turns"],
-                               phase="implement", allow_tools=True)
+                               phase="implement")
         else:
             result = run_omega(prompt, timeout=timeout,
                                work_dir=project_dir, phase="implement")
