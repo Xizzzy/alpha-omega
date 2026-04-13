@@ -114,6 +114,19 @@ def cmd_setup(args):
           sys.version_info >= (3, 9), fix="Install Python 3.9+")
     check("Claude CLI", claude_path is not None,
           fix="Install: https://docs.anthropic.com/en/docs/claude-code")
+    if claude_path:
+        claude_creds = os.path.expanduser("~/.claude/.credentials.json")
+        has_claude_auth = os.path.isfile(claude_creds)
+        if has_claude_auth:
+            try:
+                with open(claude_creds, encoding="utf-8") as f:
+                    creds = json.load(f)
+                has_claude_auth = bool(creds.get("claudeAiOauth"))
+            except (json.JSONDecodeError, OSError):
+                has_claude_auth = False
+        check("Claude auth", has_claude_auth,
+              fix="Run: claude  (will prompt for login)")
+
     check("Codex CLI", codex_path is not None,
           fix="Install: npm install -g @openai/codex")
     if codex_path:
@@ -183,6 +196,23 @@ def cmd_setup(args):
 
     print()
 
+    # Install global Claude Code skill
+    skill_dir = os.path.expanduser("~/.claude/skills/alpha-omega")
+    skill_file = os.path.join(skill_dir, "SKILL.md")
+    if os.path.isfile(skill_file):
+        print("  [ok] Claude Code skill already installed")
+    else:
+        try:
+            os.makedirs(skill_dir, exist_ok=True)
+            with open(skill_file, "w", encoding="utf-8") as f:
+                f.write(_SKILL_CONTENT)
+            print("  [created] Claude Code skill (~/.claude/skills/alpha-omega/)")
+            print("           Use /alpha-omega from any Claude Code session")
+        except OSError as exc:
+            print("  [warn] Could not install skill: %s" % exc)
+
+    print()
+
     # Step 3: First run guidance
     print("Step 3/3  Ready to go")
     print("-" * 40)
@@ -195,6 +225,44 @@ def cmd_setup(args):
     print()
 
     return 0
+
+
+_SKILL_CONTENT = """---
+name: alpha-omega
+description: "Run an Alpha-Omega dual-brain debate. Two different AI systems (Claude + Codex) independently analyze a problem, then debate to find blind spots."
+---
+
+# Alpha-Omega Dual-Brain Debate
+
+Run `ao` commands to orchestrate debates between Claude (Alpha) and Codex (Omega).
+
+## Commands
+
+```bash
+ao setup                         # First-time setup
+ao debate "question"             # Full debate
+ao review [--staged|--branch X]  # Quick code review
+ao implement <id> --executor X   # Execute a resolution
+ao recall <query>                # Search past decisions
+ao contradictions                # Find conflicting decisions
+ao doctor                        # Check prerequisites
+ao history                       # Recent outcomes
+```
+
+## When to use
+
+- Architecture decisions before implementation
+- Non-trivial trade-off decisions
+- Code review before merge
+- Strategy debates
+
+## Modes
+
+- `--mode explore` (default): Options + recommendation
+- `--mode specify`: Architecture + spec
+- `--mode build`: Spec + tasks
+- `--mode audit`: Critique existing design
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +316,21 @@ def cmd_doctor(args):
             check("Claude version: %s" % claude_version[:60], True)
         except Exception:
             check("Claude version check", False, fix="Run: claude --version")
+
+        claude_creds = os.path.expanduser("~/.claude/.credentials.json")
+        has_claude_auth = os.path.isfile(claude_creds)
+        if has_claude_auth:
+            try:
+                with open(claude_creds, encoding="utf-8") as f:
+                    creds = json.load(f)
+                has_claude_auth = bool(creds.get("claudeAiOauth"))
+            except (json.JSONDecodeError, OSError):
+                has_claude_auth = False
+        check(
+            "Claude auth" + (" (~/.claude/.credentials.json)" if has_claude_auth else ""),
+            has_claude_auth,
+            fix="Run: claude  (will prompt for login)",
+        )
 
     # Codex CLI
     codex_path = shutil.which("codex")
