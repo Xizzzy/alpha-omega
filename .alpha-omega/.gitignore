@@ -1,5 +1,6 @@
-# Keep decisions.md, config.json, INDEX.md in git
-# Ignore generated debate/review artifacts
+# Keep config.json and INDEX.md in git
+# Ignore all generated artifacts
 debates/
 sessions/
 reviews/
+decisions.md
