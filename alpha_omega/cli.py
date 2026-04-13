@@ -195,6 +195,8 @@ def cmd_debate(args):
         project_dir=project_dir,
         extra_files=extra_files,
         mode=args.mode,
+        model=getattr(args, "model", None),
+        timeout=getattr(args, "timeout", None),
     )
 
     result = session.run()
@@ -373,6 +375,10 @@ def main():
     p_debate.add_argument("--no-save", action="store_true",
                           help="Don't save results to .alpha-omega/")
     p_debate.add_argument("--json-out", help="Save decision JSON to file")
+    p_debate.add_argument("--model", default=None,
+                          help="Alpha model (default: claude-sonnet-4-5)")
+    p_debate.add_argument("--timeout", type=int, default=None,
+                          help="Timeout per brain call in seconds (default: 300)")
 
     # init
     sub.add_parser("init", help="Bootstrap .alpha-omega/ in project")

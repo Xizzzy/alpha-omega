@@ -141,11 +141,14 @@ Rules:
 class DebateSession:
     """Orchestrates a single Alpha-Omega debate session."""
 
-    def __init__(self, question, project_dir=None, extra_files=None, mode="explore"):
+    def __init__(self, question, project_dir=None, extra_files=None, mode="explore",
+                 model=None, timeout=None):
         self.question = question
         self.project_dir = project_dir or os.getcwd()
         self.extra_files = extra_files or []
         self.mode = mode  # explore | specify | build | audit
+        self.model = model or "claude-sonnet-4-5"
+        self.timeout = timeout or 300
         self.session_id = "ao_%d" % int(time.time())
 
         self.context = None
@@ -156,42 +159,65 @@ class DebateSession:
         self.sigma_result = None
         self.artifact_pack = None
 
+        # Diagnostics
+        self._diagnostics = []  # list of BrainResult.to_dict()
+        self._phase_times = {}
         self._start_time = time.time()
 
     def run(self):
         """Execute the full debate protocol. Returns artifact pack dict."""
         log.info("=== AO Session %s started ===", self.session_id)
         log.info("Question: %s", self.question[:200])
+        log.info("Model: %s, Timeout: %ds", self.model, self.timeout)
 
         # Phase 1: Build context
+        phase_start = time.time()
         log.info("Phase 1: Building project context...")
         self.context = build_context(self.project_dir, self.extra_files)
+        self._phase_times["context"] = time.time() - phase_start
 
         # Phase 2: Blind independent research
+        phase_start = time.time()
         log.info("Phase 2: Blind independent memos...")
         self.alpha_memo = self._get_blind_memo("Alpha")
         self.omega_memo = self._get_blind_memo("Omega")
+        self._phase_times["blind"] = time.time() - phase_start
 
-        if not self.alpha_memo.get("_parse_ok") and not self.omega_memo.get("_parse_ok"):
-            log.error("Both brains failed to produce valid memos. Aborting.")
-            return {
-                "error": "Both brains failed",
-                "alpha_raw": self.alpha_memo,
-                "omega_raw": self.omega_memo,
-            }
+        # Graceful degradation: if both fail, still try to produce useful output
+        both_failed = (
+            not self.alpha_memo.get("_parse_ok")
+            and not self.omega_memo.get("_parse_ok")
+        )
+        if both_failed:
+            alpha_empty = not self.alpha_memo.get("raw_text", "").strip()
+            omega_empty = not self.omega_memo.get("raw_text", "").strip()
+            if alpha_empty and omega_empty:
+                log.error("Both brains returned empty responses. Aborting.")
+                return {
+                    "error": "Both brains failed to respond",
+                    "alpha_raw": self.alpha_memo,
+                    "omega_raw": self.omega_memo,
+                    "diagnostics": self._diagnostics,
+                }
+            log.warning("Both memos failed JSON parse. Continuing with raw text fallback.")
 
         # Phase 3: Cross-examination
+        phase_start = time.time()
         log.info("Phase 3: Cross-examination...")
         self.alpha_critique = self._get_critique("Alpha", self.alpha_memo, self.omega_memo)
         self.omega_critique = self._get_critique("Omega", self.omega_memo, self.alpha_memo)
+        self._phase_times["critique"] = time.time() - phase_start
 
         # Phase 4: Sigma resolution
+        phase_start = time.time()
         log.info("Phase 4: Design Sigma resolution...")
         debate_rounds = self._build_debate_rounds()
         self.sigma_result = sigma_resolve(self.alpha_memo, self.omega_memo, debate_rounds)
         log.info("Resolution: %s", self.sigma_result.get("resolution"))
+        self._phase_times["sigma"] = time.time() - phase_start
 
         # Phase 5: Generate artifact pack
+        phase_start = time.time()
         log.info("Phase 5: Generating artifact pack...")
         self.artifact_pack = generate_artifact_pack(
             question=self.question,
@@ -202,7 +228,9 @@ class DebateSession:
             sigma_result=self.sigma_result,
             mode=self.mode,
             session_id=self.session_id,
+            diagnostics=self._build_diagnostics_summary(),
         )
+        self._phase_times["artifacts"] = time.time() - phase_start
 
         duration = time.time() - self._start_time
         log.info("=== AO Session %s completed in %.0fs ===", self.session_id, duration)
@@ -219,16 +247,35 @@ class DebateSession:
 
         log.info("Requesting blind memo from %s...", role)
         if role == "Alpha":
-            raw, usage = run_alpha(prompt, work_dir=self.project_dir)
+            result = run_alpha(prompt, timeout=self.timeout, model=self.model,
+                               work_dir=self.project_dir, phase="blind_memo")
         else:
-            raw, usage = run_omega(prompt, work_dir=self.project_dir)
+            result = run_omega(prompt, timeout=self.timeout,
+                               work_dir=self.project_dir, phase="blind_memo")
 
-        log.info("%s memo: %d chars, tokens: %s", role, len(raw), usage)
+        self._diagnostics.append(result.to_dict())
+        log.info("%s memo: %d chars in %.1fs%s",
+                 role, len(result.text), result.duration,
+                 " [ERROR: %s]" % result.error if result.error else "")
 
-        parsed = parse_json_response(raw, source=role)
+        if not result.ok:
+            log.warning("%s blind memo failed: %s", role, result.error or "empty response")
+            return {
+                "_source": role,
+                "_parse_ok": False,
+                "_error": result.error,
+                "options": [],
+                "recommendation": "",
+                "confidence": 0.3,
+                "assumptions": [],
+                "what_would_change_mind": "",
+                "open_questions": [],
+                "raw_text": result.text[:3000],
+            }
+
+        parsed = parse_json_response(result.text, source=role)
         if not parsed.get("_parse_ok"):
             log.warning("%s memo failed to parse as JSON, using raw text", role)
-            # Wrap raw text in a minimal structure so the protocol can continue
             parsed = {
                 "_source": role,
                 "_parse_ok": False,
@@ -238,7 +285,7 @@ class DebateSession:
                 "assumptions": [],
                 "what_would_change_mind": "",
                 "open_questions": [],
-                "raw_text": raw[:3000],
+                "raw_text": result.text[:3000],
             }
         return parsed
 
@@ -256,13 +303,32 @@ class DebateSession:
 
         log.info("Requesting critique from %s...", role)
         if role == "Alpha":
-            raw, usage = run_alpha(prompt, work_dir=self.project_dir)
+            result = run_alpha(prompt, timeout=self.timeout, model=self.model,
+                               work_dir=self.project_dir, phase="critique")
         else:
-            raw, usage = run_omega(prompt, work_dir=self.project_dir)
+            result = run_omega(prompt, timeout=self.timeout,
+                               work_dir=self.project_dir, phase="critique")
 
-        log.info("%s critique: %d chars, tokens: %s", role, len(raw), usage)
+        self._diagnostics.append(result.to_dict())
+        log.info("%s critique: %d chars in %.1fs%s",
+                 role, len(result.text), result.duration,
+                 " [ERROR: %s]" % result.error if result.error else "")
 
-        parsed = parse_json_response(raw, source=role)
+        if not result.ok:
+            log.warning("%s critique failed: %s", role, result.error or "empty response")
+            return {
+                "_source": role,
+                "_parse_ok": False,
+                "_error": result.error,
+                "steelman": "",
+                "critiques": [],
+                "concessions": [],
+                "final_recommendation": own_memo.get("recommendation", ""),
+                "confidence": own_memo.get("confidence", 0.5),
+                "raw_text": result.text[:3000],
+            }
+
+        parsed = parse_json_response(result.text, source=role)
         if not parsed.get("_parse_ok"):
             log.warning("%s critique failed to parse, using empty", role)
             parsed = {
@@ -273,7 +339,7 @@ class DebateSession:
                 "concessions": [],
                 "final_recommendation": own_memo.get("recommendation", ""),
                 "confidence": own_memo.get("confidence", 0.5),
-                "raw_text": raw[:3000],
+                "raw_text": result.text[:3000],
             }
         return parsed
 
@@ -293,3 +359,24 @@ class DebateSession:
                 "concessions": self.omega_critique.get("concessions", []),
             })
         return rounds
+
+    def _build_diagnostics_summary(self):
+        """Build diagnostics for the artifact pack."""
+        total_duration = time.time() - self._start_time
+        total_input = sum(d.get("usage", {}).get("input_tokens", 0) for d in self._diagnostics)
+        total_output = sum(d.get("usage", {}).get("output_tokens", 0) for d in self._diagnostics)
+        errors = [d for d in self._diagnostics if d.get("error")]
+
+        return {
+            "total_duration_s": round(total_duration, 1),
+            "phase_times": {k: round(v, 1) for k, v in self._phase_times.items()},
+            "total_input_tokens": total_input,
+            "total_output_tokens": total_output,
+            "calls": len(self._diagnostics),
+            "errors": len(errors),
+            "error_details": [
+                "%s/%s: %s" % (d["brain"], d["phase"], d["error"])
+                for d in errors
+            ],
+            "per_call": self._diagnostics,
+        }

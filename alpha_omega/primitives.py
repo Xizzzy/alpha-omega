@@ -16,19 +16,53 @@ import time
 log = logging.getLogger("ao.primitives")
 
 # ---------------------------------------------------------------------------
+# Result container
+# ---------------------------------------------------------------------------
+
+
+class BrainResult:
+    """Result from a brain invocation. Carries output, usage, and diagnostics."""
+
+    __slots__ = ("text", "usage", "duration", "error", "brain", "phase")
+
+    def __init__(self, brain="unknown", phase="unknown"):
+        self.text = ""
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+        self.duration = 0.0
+        self.error = None  # type: str | None
+        self.brain = brain
+        self.phase = phase
+
+    @property
+    def ok(self):
+        return self.error is None and len(self.text) > 0
+
+    def to_dict(self):
+        return {
+            "brain": self.brain,
+            "phase": self.phase,
+            "chars": len(self.text),
+            "duration_s": round(self.duration, 1),
+            "error": self.error,
+            "usage": dict(self.usage),
+        }
+
+
+# ---------------------------------------------------------------------------
 # Claude CLI wrapper (Alpha)
 # ---------------------------------------------------------------------------
 
 
-def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None):
-    """Run Claude CLI non-interactively. Returns (text_output, usage_dict).
+def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None,
+              max_turns=1, phase="unknown"):
+    """Run Claude CLI non-interactively. Returns BrainResult.
 
     Alpha = Claude. Uses `claude --print` with JSON output for usage tracking.
     """
     if work_dir is None:
         work_dir = os.getcwd()
 
-    usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+    r = BrainResult(brain="Alpha", phase=phase)
     start = time.time()
 
     try:
@@ -39,7 +73,7 @@ def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None):
                 "--model", model,
                 "--dangerously-skip-permissions",
                 "--no-session-persistence",
-                "--max-turns", "1",
+                "--max-turns", str(max_turns),
                 "--output-format", "json",
             ],
             input=prompt,
@@ -50,17 +84,23 @@ def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None):
         )
         raw = (result.stdout + result.stderr).strip()
     except subprocess.TimeoutExpired:
-        log.error("run_alpha: timed out after %ds", timeout)
-        return "", usage
+        r.duration = time.time() - start
+        r.error = "timeout after %ds" % timeout
+        log.error("run_alpha: %s", r.error)
+        return r
     except FileNotFoundError:
-        log.error("run_alpha: 'claude' not found in PATH")
-        return "", usage
+        r.duration = time.time() - start
+        r.error = "'claude' not found in PATH"
+        log.error("run_alpha: %s", r.error)
+        return r
     except Exception as exc:
+        r.duration = time.time() - start
+        r.error = str(exc)
         log.error("run_alpha error: %s", exc)
-        return "", usage
+        return r
 
-    duration = time.time() - start
-    log.debug("Alpha returned %d chars in %.1fs", len(raw), duration)
+    r.duration = time.time() - start
+    log.debug("Alpha returned %d chars in %.1fs", len(raw), r.duration)
 
     text_output = raw
     try:
@@ -69,13 +109,14 @@ def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None):
             text_output = outer.get("result", raw)
             u = outer.get("usage", {})
             if u:
-                usage["input_tokens"] = int(u.get("input_tokens", 0))
-                usage["output_tokens"] = int(u.get("output_tokens", 0))
-                usage["cached_tokens"] = int(u.get("cache_read_input_tokens", 0))
+                r.usage["input_tokens"] = int(u.get("input_tokens", 0))
+                r.usage["output_tokens"] = int(u.get("output_tokens", 0))
+                r.usage["cached_tokens"] = int(u.get("cache_read_input_tokens", 0))
     except (json.JSONDecodeError, TypeError):
         text_output = raw
 
-    return text_output, usage
+    r.text = text_output
+    return r
 
 
 # ---------------------------------------------------------------------------
@@ -83,8 +124,8 @@ def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None):
 # ---------------------------------------------------------------------------
 
 
-def run_omega(prompt, timeout=300, work_dir=None):
-    """Run Codex CLI non-interactively. Returns (text_output, usage_dict).
+def run_omega(prompt, timeout=300, work_dir=None, phase="unknown"):
+    """Run Codex CLI non-interactively. Returns BrainResult.
 
     Omega = OpenAI Codex. Uses `codex exec --ephemeral` with stdin pipe.
     Ephemeral: each debate turn is independent, continuity managed by protocol.
@@ -92,19 +133,21 @@ def run_omega(prompt, timeout=300, work_dir=None):
     if work_dir is None:
         work_dir = os.getcwd()
 
-    usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
-    out_file = "/tmp/ao_omega_%d.txt" % int(time.time() * 1000)
+    r = BrainResult(brain="Omega", phase=phase)
 
     # Check auth
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     codex_auth = os.path.expanduser("~/.codex/auth.json")
     if not openai_key and not os.path.isfile(codex_auth):
-        log.warning("run_omega: no Codex auth available (no OPENAI_API_KEY, no ~/.codex/auth.json)")
-        return "", usage
+        r.error = "no Codex auth (no OPENAI_API_KEY, no ~/.codex/auth.json)"
+        log.warning("run_omega: %s", r.error)
+        return r
 
     run_env = dict(os.environ)
     if openai_key:
         run_env["OPENAI_API_KEY"] = openai_key
+
+    out_file = "/tmp/ao_omega_%d.txt" % int(time.time() * 1000)
 
     args = [
         "codex", "exec",
@@ -127,17 +170,23 @@ def run_omega(prompt, timeout=300, work_dir=None):
             env=run_env,
         )
     except subprocess.TimeoutExpired:
-        log.error("run_omega: timed out after %ds", timeout)
-        return "", usage
+        r.duration = time.time() - start
+        r.error = "timeout after %ds" % timeout
+        log.error("run_omega: %s", r.error)
+        return r
     except FileNotFoundError:
-        log.error("run_omega: 'codex' not found in PATH")
-        return "", usage
+        r.duration = time.time() - start
+        r.error = "'codex' not found in PATH"
+        log.error("run_omega: %s", r.error)
+        return r
     except Exception as exc:
+        r.duration = time.time() - start
+        r.error = str(exc)
         log.error("run_omega error: %s", exc)
-        return "", usage
+        return r
 
-    duration = time.time() - start
-    log.debug("Omega returned in %.1fs", duration)
+    r.duration = time.time() - start
+    log.debug("Omega returned in %.1fs", r.duration)
 
     raw = ""
     if os.path.isfile(out_file):
@@ -154,7 +203,8 @@ def run_omega(prompt, timeout=300, work_dir=None):
     if not raw:
         raw = (result.stdout + result.stderr).strip()
 
-    return raw, usage
+    r.text = raw
+    return r
 
 
 # ---------------------------------------------------------------------------

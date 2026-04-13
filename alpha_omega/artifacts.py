@@ -17,7 +17,8 @@ log = logging.getLogger("ao.artifacts")
 
 def generate_artifact_pack(question, alpha_memo, omega_memo,
                            alpha_critique, omega_critique,
-                           sigma_result, mode="explore", session_id=""):
+                           sigma_result, mode="explore", session_id="",
+                           diagnostics=None):
     """Generate the final artifact pack from a completed debate.
 
     Returns dict with:
@@ -54,6 +55,7 @@ def generate_artifact_pack(question, alpha_memo, omega_memo,
         question, alpha_memo, omega_memo,
         alpha_critique, omega_critique,
         sigma_result, decision, mode,
+        diagnostics=diagnostics,
     )
 
     return {
@@ -96,7 +98,8 @@ def save_to_project(artifact_pack, project_dir):
 
 def _render_markdown(question, alpha_memo, omega_memo,
                      alpha_critique, omega_critique,
-                     sigma_result, decision, mode):
+                     sigma_result, decision, mode,
+                     diagnostics=None):
     """Render the full artifact pack as markdown."""
     parts = []
 
@@ -231,6 +234,33 @@ def _render_markdown(question, alpha_memo, omega_memo,
     if omega_blind:
         parts.append("- **Omega:** %s" % omega_blind)
     parts.append("")
+
+    # Diagnostics footer
+    if diagnostics:
+        parts.append("---")
+        parts.append("")
+        parts.append("<details><summary>Session diagnostics</summary>")
+        parts.append("")
+        parts.append("| Phase | Duration |")
+        parts.append("|-------|----------|")
+        for phase, dur in diagnostics.get("phase_times", {}).items():
+            parts.append("| %s | %.1fs |" % (phase, dur))
+        parts.append("| **Total** | **%.1fs** |" % diagnostics.get("total_duration_s", 0))
+        parts.append("")
+        parts.append("Tokens: %d in / %d out. Calls: %d." % (
+            diagnostics.get("total_input_tokens", 0),
+            diagnostics.get("total_output_tokens", 0),
+            diagnostics.get("calls", 0),
+        ))
+        errors = diagnostics.get("error_details", [])
+        if errors:
+            parts.append("")
+            parts.append("**Errors:**")
+            for e in errors:
+                parts.append("- %s" % e)
+        parts.append("")
+        parts.append("</details>")
+        parts.append("")
 
     return "\n".join(parts)
 
