@@ -77,3 +77,11 @@ Decision log for this project.
 **Winner:** patch-first review gate
 **Scores:** Alpha 0.000 / Omega 0.875 / Agreement 0.72
 **Dissent:** Dissenting option: 
+
+### ao_1776086098 — 2026-04-13 13:20 UTC
+
+**Q:** MEMORY UPGRADE: Design 'ao recall' and 'ao contradictions' commands. Context: .alpha-omega/ already stores decisions.md (text log), debates/ (markdown transcripts), sessions/ (structured JSON), review
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** canonical index
+**Scores:** Alpha 0.000 / Omega 0.857 / Agreement 0.76
+**Dissent:** Dissenting option: 

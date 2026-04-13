@@ -1,0 +1,29 @@
+{
+  "session_id": "ao_1776086098",
+  "timestamp": "2026-04-13 13:20 UTC",
+  "question": "MEMORY UPGRADE: Design 'ao recall' and 'ao contradictions' commands. Context: .alpha-omega/ already stores decisions.md (text log), debates/ (markdown transcripts), sessions/ (structured JSON), reviews/ (review JSON). The goal is to make this institutional memory ACTIVE, not passive. (1) 'ao recall <keyword>' \u2014 search past decisions, debates, and reviews by keyword. Show matching decisions with context. Should search across all artifact types (decisions.md entries, session JSONs, review JSONs, debate transcripts). Rank by relevance. (2) 'ao contradictions' \u2014 scan all decisions and find pairs that contradict each other. E.g., one debate decided 'use Python' and a later one decided 'rewrite in Node'. This is lexical/heuristic, not LLM \u2014 keep it stdlib-only and deterministic. How to detect contradictions without an LLM? Keyword overlap + opposite resolution? Same topic different winners? Design questions: What search index structure? How to rank results? What makes a 'contradiction'? Should ao recall show full debate or just summary? How to handle growing memory (hundreds of debates)?",
+  "resolution": "ADOPT_WITH_DISSENT",
+  "winning_option": "canonical index",
+  "winning_brain": "omega",
+  "implementable": true,
+  "implementation_brief": {
+    "goal": "MEMORY UPGRADE: Design 'ao recall' and 'ao contradictions' commands. Context: .alpha-omega/ already stores decisions.md (text log), debates/ (markdown transcripts), sessions/ (structured JSON), reviews/ (review JSON). The goal is to make this institutional memory ACTIVE, not passive. (1) 'ao recall <keyword>' \u2014 search past decisions, debates, and reviews by keyword. Show matching decisions with context. Should search across all artifact types (decisions.md entries, session JSONs, review JSONs, debate transcripts). Rank by relevance. (2) 'ao contradictions' \u2014 scan all decisions and find pairs that contradict each other. E.g., one debate decided 'use Python' and a later one decided 'rewrite in Node'. This is lexical/heuristic, not LLM \u2014 keep it stdlib-only and deterministic. How to detect contradictions without an LLM? Keyword overlap + opposite resolution? Same topic different winners? Design questions: What search index structure? How to rank results? What makes a 'contradiction'? Should ao recall show full debate or just summary? How to handle growing memory (hundreds of debates)?",
+    "resolution": "ADOPT_WITH_DISSENT",
+    "winning_option": "canonical index",
+    "winning_thesis": "Build one deterministic `.alpha-omega/memory_index.json` with one canonical document per debate or review, not one result per file. Each doc merges all available sources for that item, stores normalized tokens and metadata, and is ranked by field-weighted lexical scoring for `ao recall`; the same index also supplies candidate pairs for `ao contradictions`, which classifies matches as `direct_opposite`, `exclusive_choice`, or `policy_reversal` using overlap thresholds plus a small antonym lexicon. Default `ao recall` should show compact summaries with snippets and source refs, not full debates; add `--full` only when needed.",
+    "constraints": [
+      "Adds index maintenance and schema-versioning work",
+      "Can become stale if artifacts are edited manually unless rebuild logic exists",
+      "Heuristic contradiction labels will still have false positives and false negatives",
+      "Needs careful normalization because the repo already mixes English and Russian text"
+    ],
+    "dissent": "Dissenting option: ",
+    "open_questions": []
+  },
+  "scores": {
+    "alpha": 0.0,
+    "omega": 0.8565,
+    "agreement": 0.76
+  },
+  "attempts": []
+}
