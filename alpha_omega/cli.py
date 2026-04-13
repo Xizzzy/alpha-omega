@@ -148,6 +148,7 @@ def cmd_setup(args):
                     "Run `ao debate \"question\"` or `ao review` to get started.\n")
         with open(os.path.join(ao_dir, "decisions.md"), "w", encoding="utf-8") as f:
             f.write("# Alpha-Omega Decisions\n\nDecision log for this project.\n")
+        _write_ao_gitignore(ao_dir)
         print("  [created] .alpha-omega/")
 
     # AGENTS.md
@@ -593,6 +594,19 @@ def cmd_review(args):
     return 0
 
 
+def _write_ao_gitignore(ao_dir):
+    """Create .gitignore inside .alpha-omega/ to keep git clean."""
+    gitignore_path = os.path.join(ao_dir, ".gitignore")
+    if os.path.isfile(gitignore_path):
+        return
+    with open(gitignore_path, "w", encoding="utf-8") as f:
+        f.write("# Keep decisions.md, config.json, INDEX.md in git\n")
+        f.write("# Ignore generated debate/review artifacts\n")
+        f.write("debates/\n")
+        f.write("sessions/\n")
+        f.write("reviews/\n")
+
+
 def _validate_session_id(session_id):
     """Validate session_id to prevent path traversal."""
     import re
@@ -879,6 +893,8 @@ Both Alpha (Claude) and Omega (Codex) will read project context automatically.
     # decisions.md
     with open(os.path.join(ao_dir, "decisions.md"), "w", encoding="utf-8") as f:
         f.write("# Alpha-Omega Decisions\n\nDecision log for this project.\n")
+
+    _write_ao_gitignore(ao_dir)
 
     # AGENTS.md (for Omega/Codex) — only if it doesn't exist
     agents_path = os.path.join(project_dir, "AGENTS.md")
