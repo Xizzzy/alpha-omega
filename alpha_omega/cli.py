@@ -692,6 +692,105 @@ def cmd_status(args):
     return 0
 
 
+def cmd_recall(args):
+    """Search past decisions, debates, and reviews."""
+    from .memory import build_index, recall
+
+    project_dir = args.project or os.getcwd()
+    ao_dir = os.path.join(project_dir, ".alpha-omega")
+
+    if not os.path.isdir(ao_dir):
+        print("No .alpha-omega/ found. Run 'ao init' first.", file=sys.stderr)
+        return 1
+
+    query = " ".join(args.query)
+    if not query.strip():
+        print("Error: provide a search query", file=sys.stderr)
+        return 1
+
+    docs = build_index(ao_dir)
+    results = recall(docs, query, max_results=args.last)
+
+    if not results:
+        print("No matches for: %s" % query)
+        return 0
+
+    print("Results for: %s" % query)
+    print("=" * 50)
+    print()
+
+    for score, doc in results:
+        doc_type = doc.get("type", "?")
+        doc_id = doc.get("id", "?")
+        resolution = doc.get("resolution", "?")
+        winner = doc.get("winning_option")
+        question = doc.get("question", "")[:120]
+        summary = doc.get("summary", "")[:200]
+        timestamp = doc.get("timestamp", "")
+
+        print("[%s] %s  (score: %.2f)" % (doc_type, doc_id, score))
+        print("  %s" % timestamp)
+        print("  Q: %s" % question)
+        if winner:
+            print("  Winner: %s (%s)" % (winner, resolution))
+        else:
+            print("  Verdict: %s" % resolution)
+        if summary and summary != question[:200]:
+            print("  %s" % summary)
+        print()
+
+    print("%d result(s) found." % len(results))
+    return 0
+
+
+def cmd_contradictions(args):
+    """Scan decisions for potential contradictions."""
+    from .memory import build_index, find_contradictions
+
+    project_dir = args.project or os.getcwd()
+    ao_dir = os.path.join(project_dir, ".alpha-omega")
+
+    if not os.path.isdir(ao_dir):
+        print("No .alpha-omega/ found. Run 'ao init' first.", file=sys.stderr)
+        return 1
+
+    docs = build_index(ao_dir)
+    contradictions = find_contradictions(docs)
+
+    if not contradictions:
+        print("No contradictions found across %d decisions." % len(docs))
+        return 0
+
+    print("Potential Contradictions")
+    print("=" * 50)
+    print()
+
+    for i, c in enumerate(contradictions, 1):
+        c_type = c["type"].replace("_", " ").title()
+        a = c["doc_a"]
+        b = c["doc_b"]
+
+        print("%d. [%s]" % (i, c_type))
+        print("   %s" % c["reason"])
+        print()
+        print("   A: %s (%s)" % (a["id"], a.get("timestamp", "")))
+        print("      Q: %s" % a.get("question", "")[:100])
+        if a.get("winning_option"):
+            print("      Winner: %s" % a["winning_option"])
+        print()
+        print("   B: %s (%s)" % (b["id"], b.get("timestamp", "")))
+        print("      Q: %s" % b.get("question", "")[:100])
+        if b.get("winning_option"):
+            print("      Winner: %s" % b["winning_option"])
+        print()
+        if c.get("shared_topics"):
+            print("   Shared topics: %s" % ", ".join(c["shared_topics"]))
+        print()
+
+    print("%d potential contradiction(s) found." % len(contradictions))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # CLI parser
 # ---------------------------------------------------------------------------
@@ -754,6 +853,14 @@ def main():
     p_impl.add_argument("--force", action="store_true",
                         help="Override existing lock")
 
+    # recall
+    p_recall = sub.add_parser("recall", help="Search past decisions and reviews")
+    p_recall.add_argument("query", nargs="+", help="Search query")
+    p_recall.add_argument("--last", type=int, default=10, help="Max results")
+
+    # contradictions
+    sub.add_parser("contradictions", help="Find contradictions in past decisions")
+
     # init
     sub.add_parser("init", help="Bootstrap .alpha-omega/ in project")
 
@@ -775,6 +882,10 @@ def main():
         return cmd_review(args)
     elif args.command == "implement":
         return cmd_implement(args)
+    elif args.command == "recall":
+        return cmd_recall(args)
+    elif args.command == "contradictions":
+        return cmd_contradictions(args)
     elif args.command == "init":
         return cmd_init(args)
     elif args.command == "history":
