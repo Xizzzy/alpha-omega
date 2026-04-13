@@ -63,3 +63,17 @@ Decision log for this project.
 **Winner:** winner when unique
 **Scores:** Alpha 0.000 / Omega 0.881 / Agreement 0.70
 **Dissent:** Dissenting option: 
+
+### ao_1776083434 — 2026-04-13 12:34 UTC
+
+**Q:** Quick question for Omega specifically: How should Codex/GPT be credited in git commits when Omega writes code via 'ao implement'? Currently we use 'Co-Authored-By: OpenAI Codex <noreply@openai.com>' b
+**Resolution:** DEADLOCK
+**Scores:** Alpha 0.000 / Omega 0.000 / Agreement 0.63
+
+### ao_1776084685 — 2026-04-13 12:56 UTC
+
+**Q:** REVIEW GATE: Design 'ao review' command — a lightweight daily workflow that runs blind memos + Sigma on code changes without the full critique phase. Based on NeurIPS 2025 finding: ensemble diversity 
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** patch-first review gate
+**Scores:** Alpha 0.000 / Omega 0.875 / Agreement 0.72
+**Dissent:** Dissenting option: 
