@@ -7,7 +7,8 @@ name = "alpha-omega"
 version = "0.3.0"
 description = "Dual-brain debate protocol — Claude (Alpha) vs Codex (Omega)"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [
     {name = "Yegor Bolshakov"},
