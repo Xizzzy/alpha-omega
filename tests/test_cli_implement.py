@@ -50,7 +50,7 @@ class ImplementExecutorTests(unittest.TestCase):
 
     def test_cmd_implement_requires_explicit_executor_for_ambiguous_winner(self):
         with tempfile.TemporaryDirectory() as project_dir:
-            session_id = "ao_ambiguous"
+            session_id = "ao_9990001"
             _write_session(project_dir, session_id, "both")
             args = Namespace(
                 project=project_dir,
@@ -69,7 +69,7 @@ class ImplementExecutorTests(unittest.TestCase):
                         exit_code = cli.cmd_implement(args)
 
             self.assertEqual(exit_code, 1)
-            self.assertIn("ambiguous winning_brain='both'", stderr.getvalue())
+            self.assertIn("ambiguous winning_brain", stderr.getvalue())
             self.assertIn("--executor alpha or --executor omega", stderr.getvalue())
             self.assertFalse(run_alpha.called)
             self.assertFalse(run_omega.called)
@@ -86,7 +86,7 @@ class ImplementExecutorTests(unittest.TestCase):
 
     def test_cmd_implement_defaults_to_unique_winner_brain(self):
         with tempfile.TemporaryDirectory() as project_dir:
-            session_id = "ao_unique"
+            session_id = "ao_9990002"
             session_file = _write_session(project_dir, session_id, "omega")
             args = Namespace(
                 project=project_dir,

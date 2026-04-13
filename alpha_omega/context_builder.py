@@ -81,10 +81,15 @@ def build_context(project_dir=None, extra_files=None):
             ao_memory[rel] = content
             total_chars += len(content)
 
-    # 3. Extra files explicitly requested
+    # 3. Extra files explicitly requested (contained to project dir)
     if extra_files:
+        project_real = os.path.realpath(project_dir)
         for path in extra_files:
             abs_path = path if os.path.isabs(path) else os.path.join(project_dir, path)
+            abs_path = os.path.realpath(abs_path)
+            if not abs_path.startswith(project_real + os.sep) and abs_path != project_real:
+                log.warning("Skipping extra file outside project: %s", path)
+                continue
             if os.path.isfile(abs_path):
                 rel = os.path.relpath(abs_path, project_dir)
                 content = _read_truncated(abs_path, MAX_FILE_CHARS)
@@ -136,6 +141,16 @@ def build_review_context(project_dir=None, scope="unstaged"):
     if project_dir is None:
         project_dir = os.getcwd()
 
+    # Check if we're in a git repo
+    git_check = _run_git(["git", "rev-parse", "--git-dir"], project_dir, 200)
+    if not git_check.strip():
+        log.error("Not a git repository: %s", project_dir)
+        return {
+            "project_dir": project_dir, "scope": scope, "diff": "",
+            "stat": "", "files_changed": [], "new_files": {},
+            "context_text": "", "error": "Not a git repository",
+        }
+
     diff_args = _diff_args_for_scope(scope, project_dir)
 
     # Get diff
@@ -150,12 +165,24 @@ def build_review_context(project_dir=None, scope="unstaged"):
     name_only = _run_git(["git", "diff", "--name-only"] + diff_args, project_dir, 5000)
     files_changed = [f for f in name_only.strip().splitlines() if f.strip()]
 
+    # Include untracked files for unstaged scope
+    untracked_files = []
+    if scope == "unstaged":
+        untracked_raw = _run_git(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            project_dir, 5000,
+        )
+        untracked_files = [f for f in untracked_raw.strip().splitlines() if f.strip()]
+        files_changed.extend(untracked_files)
+
     # Get new files — include full content if small
     new_files_raw = _run_git(
         ["git", "diff", "--name-only", "--diff-filter=A"] + diff_args,
         project_dir, 5000,
     )
     new_file_paths = [f for f in new_files_raw.strip().splitlines() if f.strip()]
+    # Also treat untracked files as new files
+    new_file_paths.extend(untracked_files)
     new_files = {}
     for path in new_file_paths:
         abs_path = os.path.join(project_dir, path)

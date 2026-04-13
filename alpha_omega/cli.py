@@ -27,7 +27,7 @@ import sys
 from .protocol import DebateSession
 from .artifacts import save_to_project
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 def setup_logging(verbose=False):
@@ -189,6 +189,16 @@ def cmd_setup(args):
     print()
 
     # Install global Claude Code skill
+    # Config
+    from .config import save_default_config
+    config_file = os.path.join(ao_dir, "config.json")
+    if os.path.isfile(config_file):
+        print("  [ok] config.json already exists")
+    else:
+        if save_default_config(project_dir):
+            print("  [created] config.json (alpha_model, timeouts)")
+
+    # Claude Code skill
     skill_dir = os.path.expanduser("~/.claude/skills/alpha-omega")
     skill_file = os.path.join(skill_dir, "SKILL.md")
     if os.path.isfile(skill_file):
@@ -399,6 +409,8 @@ def cmd_doctor(args):
 
 def cmd_debate(args):
     """Run a full Alpha-Omega debate session."""
+    from .config import load_config
+
     # Get the question
     if args.file:
         with open(args.file, encoding="utf-8") as f:
@@ -415,6 +427,7 @@ def cmd_debate(args):
 
     extra_files = args.extra or []
     project_dir = args.project or os.getcwd()
+    config = load_config(project_dir)
 
     print("=" * 60)
     print("Alpha-Omega Debate Session")
@@ -430,8 +443,8 @@ def cmd_debate(args):
         project_dir=project_dir,
         extra_files=extra_files,
         mode=args.mode,
-        model=getattr(args, "model", None),
-        timeout=getattr(args, "timeout", None),
+        model=getattr(args, "model", None) or config["alpha_model"],
+        timeout=getattr(args, "timeout", None) or config["alpha_timeout"],
     )
 
     result = session.run()
@@ -463,10 +476,12 @@ def cmd_debate(args):
 
 def cmd_review(args):
     """Run a lightweight dual-brain code review."""
+    from .config import load_config
     from .context_builder import build_review_context
     from .review import ReviewSession
 
     project_dir = args.project or os.getcwd()
+    config = load_config(project_dir)
 
     # Determine scope
     if args.branch:
@@ -485,7 +500,11 @@ def cmd_review(args):
     # Build review context
     review_ctx = build_review_context(project_dir, scope)
 
-    if not review_ctx.get("diff", "").strip():
+    if review_ctx.get("error"):
+        print("Error: %s" % review_ctx["error"], file=sys.stderr)
+        return 1
+
+    if not review_ctx.get("diff", "").strip() and not review_ctx.get("new_files"):
         print("No changes to review.")
         return 0
 
@@ -499,8 +518,8 @@ def cmd_review(args):
     # Run review
     session = ReviewSession(
         review_ctx,
-        model=getattr(args, "model", None),
-        timeout=getattr(args, "timeout", None),
+        model=getattr(args, "model", None) or config["alpha_model"],
+        timeout=getattr(args, "timeout", None) or config["review_timeout"],
     )
     result = session.run()
 
@@ -574,13 +593,28 @@ def cmd_review(args):
     return 0
 
 
+def _validate_session_id(session_id):
+    """Validate session_id to prevent path traversal."""
+    import re
+    if not re.match(r'^ao[r]?_\d+$', session_id):
+        raise ValueError("Invalid session ID: %s (expected ao_<digits> or aor_<digits>)" % session_id)
+    return session_id
+
+
 def cmd_implement(args):
     """Run implementation based on a resolved debate session."""
+    from .config import load_config
     from .primitives import run_alpha, run_omega, parse_json_response
 
     project_dir = args.project or os.getcwd()
-    session_id = args.session_id
+    config = load_config(project_dir)
     executor = args.executor
+
+    try:
+        session_id = _validate_session_id(args.session_id)
+    except ValueError as exc:
+        print("Error: %s" % exc, file=sys.stderr)
+        return 1
 
     # Load session JSON
     session_file = os.path.join(project_dir, ".alpha-omega", "sessions", "%s.json" % session_id)
@@ -628,65 +662,68 @@ def cmd_implement(args):
     with open(lock_file, "w", encoding="utf-8") as f:
         json.dump(lock_data, f, indent=2)
 
-    # Build implementation prompt
-    brief = session.get("implementation_brief", {})
-    prompt = _build_implement_prompt(brief, executor, project_dir)
-
-    print("=" * 60)
-    print("Alpha-Omega Implementation")
-    print("=" * 60)
-    print("Session: %s" % session_id)
-    print("Executor: %s (%s)" % (executor.upper(), "Claude" if executor == "alpha" else "Codex"))
-    print("Resolution: %s" % session.get("resolution", "?"))
-    print("Winning option: %s" % session.get("winning_option", "?"))
-    print("=" * 60)
-    print()
-
-    # Run implementation
-    timeout = args.timeout or 900
-    if executor == "alpha":
-        model = args.model or "claude-sonnet-4-5"
-        result = run_alpha(prompt, timeout=timeout, model=model,
-                           work_dir=project_dir, max_turns=6, phase="implement")
-    else:
-        result = run_omega(prompt, timeout=timeout,
-                           work_dir=project_dir, phase="implement")
-
-    # Parse completion report
-    report = parse_json_response(result.text, source=executor)
-    if not report.get("_parse_ok"):
-        report = {
-            "status": "partial" if result.ok else "failed",
-            "summary": result.text[:2000] if result.text else (result.error or "No output"),
-            "files_changed": [],
-            "commands_ran": [],
-            "blockers": [result.error] if result.error else [],
-            "next_steps": [],
-        }
-
-    # Record attempt
-    attempt = {
-        "executor": executor,
-        "timestamp": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
-        "status": report.get("status", "unknown"),
-        "summary": report.get("summary", ""),
-        "files_changed": report.get("files_changed", []),
-        "commands_ran": report.get("commands_ran", []),
-        "blockers": report.get("blockers", []),
-        "next_steps": report.get("next_steps", []),
-        "duration_s": round(result.duration, 1),
-    }
-    session.setdefault("attempts", []).append(attempt)
-
-    # Save updated session
-    with open(session_file, "w", encoding="utf-8") as f:
-        json.dump(session, f, indent=2, default=str)
-
-    # Release lock
     try:
-        os.remove(lock_file)
-    except OSError:
-        pass
+        # Build implementation prompt
+        brief = session.get("implementation_brief", {})
+        prompt = _build_implement_prompt(brief, executor, project_dir)
+
+        print("=" * 60)
+        print("Alpha-Omega Implementation")
+        print("=" * 60)
+        print("Session: %s" % session_id)
+        print("Executor: %s (%s)" % (executor.upper(), "Claude" if executor == "alpha" else "Codex"))
+        print("Resolution: %s" % session.get("resolution", "?"))
+        print("Winning option: %s" % session.get("winning_option", "?"))
+        print("=" * 60)
+        print()
+
+        # Run implementation
+        timeout = args.timeout or config["implement_timeout"]
+        if executor == "alpha":
+            model = args.model or config["alpha_model"]
+            result = run_alpha(prompt, timeout=timeout, model=model,
+                               work_dir=project_dir,
+                               max_turns=config["implement_max_turns"],
+                               phase="implement")
+        else:
+            result = run_omega(prompt, timeout=timeout,
+                               work_dir=project_dir, phase="implement")
+
+        # Parse completion report
+        report = parse_json_response(result.text, source=executor)
+        if not report.get("_parse_ok"):
+            report = {
+                "status": "partial" if result.ok else "failed",
+                "summary": result.text[:2000] if result.text else (result.error or "No output"),
+                "files_changed": [],
+                "commands_ran": [],
+                "blockers": [result.error] if result.error else [],
+                "next_steps": [],
+            }
+
+        # Record attempt
+        attempt = {
+            "executor": executor,
+            "timestamp": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
+            "status": report.get("status", "unknown"),
+            "summary": report.get("summary", ""),
+            "files_changed": report.get("files_changed", []),
+            "commands_ran": report.get("commands_ran", []),
+            "blockers": report.get("blockers", []),
+            "next_steps": report.get("next_steps", []),
+            "duration_s": round(result.duration, 1),
+        }
+        session.setdefault("attempts", []).append(attempt)
+
+        # Save updated session
+        with open(session_file, "w", encoding="utf-8") as f:
+            json.dump(session, f, indent=2, default=str)
+    finally:
+        # Always release lock
+        try:
+            os.remove(lock_file)
+        except OSError:
+            pass
 
     # Show results
     print()

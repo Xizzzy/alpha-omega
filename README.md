@@ -7,76 +7,82 @@ Dual-brain thinking tool. Two genuinely different AI systems (Claude + Codex) in
 ## Install
 
 ```bash
-# Install with pipx (recommended)
-pipx install alpha-omega
-
-# Or with pip
-pip install alpha-omega
-
-# Or run directly from source
-python3 ao.py <command>
+pipx install alpha-omega    # recommended
+pip install alpha-omega      # or with pip
 ```
 
 ## Quick start
 
 ```bash
-# 1. Check prerequisites
-ao doctor
-
-# 2. Initialize AO in your project
-cd your-project
-ao init
-
-# 3. Run a debate
-ao debate "Should we use PostgreSQL or SQLite for this project?"
-
-# 4. With extra context files
-ao debate --extra schema.sql --extra requirements.txt "Design the data layer"
-
-# 5. Different modes
-ao debate --mode specify "Design the authentication subsystem"
-ao debate --mode audit "Review the current API rate limiting"
-
-# 6. Check history
-ao history
-ao status
+ao setup                     # check prerequisites + initialize project
+ao debate "your question"    # full dual-brain debate
 ```
+
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `ao setup` | First-time setup: prerequisites + init + skill install |
+| `ao doctor` | Check Claude CLI, Codex CLI, auth, project state |
+| `ao debate "question"` | Full debate: blind memos → critique → Sigma resolution |
+| `ao review` | Quick code review on unstaged changes |
+| `ao review --staged` | Review staged changes |
+| `ao review --branch main` | Review all changes since branch |
+| `ao implement <id>` | Execute a debate resolution with either brain |
+| `ao recall <query>` | Search past decisions and reviews |
+| `ao contradictions` | Find conflicting past decisions |
+| `ao init` | Create .alpha-omega/ in current project |
+| `ao history` | Show recent debate outcomes |
+| `ao status` | Show project AO state |
 
 ## How it works
 
 ```
-User Question
-    |
-    v
-[Context Assembly]  -- reads CLAUDE.md, AGENTS.md, .alpha-omega/
-    |
-    +--------+--------+
-    |                 |
-    v                 v
- [Alpha]          [Omega]      <-- BLIND: neither sees the other's output
- Claude            Codex
- memo              memo
-    |                 |
-    +--------+--------+
-    |                 |
-    v                 v
- [Alpha]          [Omega]      <-- CRITIQUE: steelman first, then find blind spots
- critique          critique
-    |                 |
-    +--------+--------+
-             |
-             v
-      [Design Sigma]            <-- DETERMINISTIC: scores argument quality, not volume
-             |
-             v
-      [Artifact Pack]           <-- RESOLUTION + decisions + open questions
+    ┌──────────┐                              ┌──────────┐
+    │  Alpha   │          BLIND PHASE         │  Omega   │
+    │  Claude  │  ── independently analyze ── │  Codex   │
+    └────┬─────┘                              └────┬─────┘
+         │              CRITIQUE PHASE              │
+         │  ── steelman + critique + concessions ── │
+         └──────────────────┬───────────────────────┘
+                            │
+                   ┌────────▼────────┐
+                   │  Design Sigma   │  ← deterministic, no LLM
+                   │  (resolution)   │
+                   └────────┬────────┘
+                            │
+                   ┌────────▼────────┐
+                   │  Artifact Pack  │  ← resolution + dissent + risks
+                   └─────────────────┘
 ```
 
-## Three invariants
+## Resolution states
 
-1. **Different** — Claude and Codex have different training data, different weights, different blind spots
-2. **Competent** — both are frontier-class models, not one strong + one weak
-3. **Quality protocol** — Sigma evaluates evidence strength, not just agreement/disagreement
+| State | Meaning |
+|-------|---------|
+| `ADOPT` | Strong consensus |
+| `ADOPT_WITH_DISSENT` | Winner with recorded minority concern |
+| `RUN_EXPERIMENT` | Both plausible, need data |
+| `NEEDS_USER_CHOICE` | Depends on user priorities |
+| `INSUFFICIENT_EVIDENCE` | Both brains uncertain |
+| `DEADLOCK` | Fundamental disagreement |
+
+## Configuration
+
+Per-project config in `.alpha-omega/config.json`:
+
+```json
+{
+  "alpha_model": "claude-sonnet-4-5",
+  "alpha_timeout": 300,
+  "omega_timeout": 600,
+  "review_timeout": 180,
+  "implement_timeout": 900,
+  "implement_max_turns": 6
+}
+```
+
+CLI flags override config values.
 
 ## Requirements
 
@@ -89,27 +95,25 @@ Run `ao doctor` to verify all prerequisites.
 ## Project structure
 
 ```
-alpha-omega/
-├── ao.py                  # Backward-compatible entry point
-├── pyproject.toml         # Package metadata
-├── alpha_omega/
-│   ├── cli.py             # CLI commands (doctor, debate, init, ...)
-│   ├── primitives.py      # Claude + Codex CLI wrappers
-│   ├── protocol.py        # Debate orchestrator
-│   ├── sigma.py           # Design Sigma resolver (deterministic, no LLM)
-│   ├── context_builder.py # Project context assembly
-│   └── artifacts.py       # Artifact pack generator
-
 Your project/
-├── .alpha-omega/          # AO memory (created by `ao init`)
-│   ├── INDEX.md
-│   ├── decisions.md       # Decision log
-│   └── debates/           # Full transcripts
-├── AGENTS.md              # Omega's persistent memory
-└── CLAUDE.md              # Alpha's persistent memory
+├── .alpha-omega/
+│   ├── config.json      # Model and timeout settings
+│   ├── decisions.md     # Decision log
+│   ├── sessions/        # Structured JSON per debate
+│   ├── debates/         # Full markdown transcripts
+│   └── reviews/         # Review results
+├── AGENTS.md            # Omega's project memory
+└── CLAUDE.md            # Alpha's project memory
 ```
 
 ## Integration with Claude Code
 
-Global skill installed at `~/.claude/skills/alpha-omega/SKILL.md`.
-Use `/alpha-omega` from any Claude Code session.
+`ao setup` installs a global skill. Use `/alpha-omega` from any Claude Code session.
+
+## Philosophy
+
+See [MANIFESTO.md](MANIFESTO.md) — on the necessary architecture of thought that cannot be monological.
+
+## License
+
+MIT
