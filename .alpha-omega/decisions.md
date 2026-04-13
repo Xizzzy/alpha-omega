@@ -23,3 +23,27 @@ Decision log for this project.
 **Winner:** pr/adr copilot
 **Scores:** Alpha 0.000 / Omega 0.854 / Agreement 0.72
 **Dissent:** Dissenting option: 
+
+### ao_1776040596 — 2026-04-13 00:40 UTC
+
+**Q:** ONBOARDING & TECH STACK. Two questions: (1) ONBOARDING: A user wants to add Alpha-Omega to their project. What should the experience be? Currently there is no clear, simple integration guide. Steps: i
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** python package + guided cli
+**Scores:** Alpha 0.000 / Omega 0.889 / Agreement 0.72
+**Dissent:** Dissenting option: 
+
+### ao_1776040582 — 2026-04-13 00:41 UTC
+
+**Q:** SYMMETRY & DUAL IMPLEMENTATION. Currently Alpha-Omega is asymmetric: only Claude Code can initiate debates, Omega (Codex) is a passive subprocess. Problem: (1) The tool should be equally usable from C
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** session ledger plus implement
+**Scores:** Alpha 0.000 / Omega 0.860 / Agreement 0.75
+**Dissent:** Dissenting option: 
+
+### ao_1776040589 — 2026-04-13 00:42 UTC
+
+**Q:** STRATEGY & COMPETITIVE ADVANTAGES. Based on competitive research of 25+ tools: GitHub Copilot Rubber Duck (cross-model review, production), Karpathy LLM Council (17K stars, parallel+synthesize), Claud
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** vote-first review gate
+**Scores:** Alpha 0.000 / Omega 0.875 / Agreement 0.72
+**Dissent:** Dissenting option: 
