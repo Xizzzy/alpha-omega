@@ -57,6 +57,27 @@ Extracted from makemoney project (crypto trading bot) where it ran as brain.py d
 - stdlib only (no pip dependencies)
 - Test: `python3 ao.py debate --project /path/to/project "question"`
 
+## Self-development with AO
+
+This project is bootstrapped: use Alpha-Omega debates for its own development.
+
+When to run a debate before making changes:
+- Architecture decisions (new modules, protocol changes, scoring weights)
+- Non-trivial refactors that affect multiple files
+- Adding new features to the protocol or Sigma
+- Any change where the right approach isn't obvious
+
+How to invoke (--project is a global flag, goes before the subcommand):
+```bash
+python3 ao.py --project . debate "your question about the change"
+python3 ao.py --project . debate --extra core/sigma.py "should we change scoring weights?"
+```
+
+Check past decisions before starting new work:
+```bash
+python3 ao.py history
+```
+
 ## Rules
 
 - NEVER hardcode project-specific paths — everything via --project or cwd
