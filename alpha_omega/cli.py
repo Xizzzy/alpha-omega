@@ -40,6 +40,164 @@ def setup_logging(verbose=False):
 
 
 # ---------------------------------------------------------------------------
+# Welcome & Setup
+# ---------------------------------------------------------------------------
+
+_SAMPLE_DEBATE = (
+    'ao debate --mode audit '
+    '"Audit this project: what are the top 3 risks, '
+    'top 3 strengths, and the single highest-leverage improvement?"'
+)
+
+
+def _show_welcome(args):
+    """Stateful welcome message instead of raw argparse help."""
+    project_dir = args.project or os.getcwd()
+    ao_dir = os.path.join(project_dir, ".alpha-omega")
+    is_setup = os.path.isdir(ao_dir)
+
+    print("Alpha-Omega v%s" % __version__)
+    print("Two independent AI brains. One resolved answer.")
+    print()
+
+    if not is_setup:
+        print("Get started:")
+        print("  ao setup           Check prerequisites + initialize project")
+        print()
+        print("Or step by step:")
+        print("  ao doctor          Check Claude + Codex CLIs")
+        print("  ao init            Create .alpha-omega/ in this project")
+        print("  %s" % _SAMPLE_DEBATE)
+    else:
+        print("Commands:")
+        print("  ao debate \"...\"    Full dual-brain debate")
+        print("  ao review          Quick code review (staged/unstaged/branch)")
+        print("  ao implement ID    Execute a debate resolution")
+        print("  ao recall QUERY    Search past decisions")
+        print("  ao contradictions  Find conflicting past decisions")
+        print("  ao history         Recent debate outcomes")
+        print("  ao status          Project state")
+        print("  ao doctor          Check prerequisites")
+
+    print()
+    print("Use ao --help for full options.")
+    return 0
+
+
+def cmd_setup(args):
+    """First-time setup: doctor + init + first-run guidance."""
+    project_dir = args.project or os.getcwd()
+
+    print("Alpha-Omega Setup")
+    print("=" * 40)
+    print()
+
+    # Step 1: Doctor checks (non-blocking)
+    print("Step 1/3  Checking prerequisites")
+    print("-" * 40)
+
+    issues = []
+
+    claude_path = shutil.which("claude")
+    codex_path = shutil.which("codex")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    codex_auth = os.path.expanduser("~/.codex/auth.json")
+
+    def check(label, passed, fix=""):
+        status = "ok" if passed else "warn"
+        print("  [%s] %s" % (status, label))
+        if not passed and fix:
+            print("        fix: %s" % fix)
+            issues.append(fix)
+
+    check("Python %d.%d" % (sys.version_info.major, sys.version_info.minor),
+          sys.version_info >= (3, 9), fix="Install Python 3.9+")
+    check("Claude CLI", claude_path is not None,
+          fix="Install: https://docs.anthropic.com/en/docs/claude-code")
+    check("Codex CLI", codex_path is not None,
+          fix="Install: npm install -g @openai/codex")
+    if codex_path:
+        check("Codex auth", bool(openai_key) or os.path.isfile(codex_auth),
+              fix="Run: codex login")
+    print()
+
+    if issues:
+        print("Some prerequisites missing (see fixes above).")
+        print("You can still initialize — debates will work once CLIs are ready.")
+        print()
+
+    # Step 2: Init
+    print("Step 2/3  Initializing project memory")
+    print("-" * 40)
+
+    # Delegate to cmd_init logic but inline for cleaner output
+    ao_dir = os.path.join(project_dir, ".alpha-omega")
+    debates_dir = os.path.join(ao_dir, "debates")
+
+    if os.path.isdir(ao_dir):
+        print("  [ok] .alpha-omega/ already exists")
+    else:
+        os.makedirs(debates_dir, exist_ok=True)
+        with open(os.path.join(ao_dir, "INDEX.md"), "w", encoding="utf-8") as f:
+            f.write("# Alpha-Omega Memory\n\nDecision memory for this project.\n"
+                    "Run `ao debate \"question\"` or `ao review` to get started.\n")
+        with open(os.path.join(ao_dir, "decisions.md"), "w", encoding="utf-8") as f:
+            f.write("# Alpha-Omega Decisions\n\nDecision log for this project.\n")
+        print("  [created] .alpha-omega/")
+
+    # AGENTS.md
+    agents_path = os.path.join(project_dir, "AGENTS.md")
+    if os.path.isfile(agents_path):
+        print("  [ok] AGENTS.md already exists")
+    else:
+        project_name = os.path.basename(os.path.abspath(project_dir))
+        with open(agents_path, "w", encoding="utf-8") as f:
+            f.write("# %s\n\n" % project_name)
+            f.write("> **You are Omega** (GPT/Codex), one half of the Alpha-Omega dual-brain system.\n")
+            f.write("> Alpha (Claude) is the other half. You have equal authority to propose,\n")
+            f.write("> critique, and decide.\n\n")
+            f.write("## Your mandate\n\n")
+            f.write("1. **Debate, don't defer.** Push back on Alpha with evidence.\n")
+            f.write("2. **Edit freely.** You have write access.\n")
+            f.write("3. **Refuse nonsense.** Be honest, not agreeable.\n\n")
+            f.write("## Project context\n\nRead `.alpha-omega/INDEX.md` and CLAUDE.md before answering.\n")
+        print("  [created] AGENTS.md")
+
+    # CLAUDE.md
+    claude_md = os.path.join(project_dir, "CLAUDE.md")
+    if os.path.isfile(claude_md):
+        print("  [ok] CLAUDE.md already exists")
+    else:
+        project_name = os.path.basename(os.path.abspath(project_dir))
+        with open(claude_md, "w", encoding="utf-8") as f:
+            f.write("# %s\n\n" % project_name)
+            f.write("## What this project is\n\n")
+            f.write("<!-- TODO: Describe what this project does -->\n\n")
+            f.write("## Architecture\n\n")
+            f.write("<!-- TODO: Key files, modules, how things connect -->\n\n")
+            f.write("## Commands\n\n")
+            f.write("<!-- TODO: How to build, test, run -->\n\n")
+            f.write("## Constraints\n\n")
+            f.write("<!-- TODO: Language version, dependencies, rules -->\n\n")
+        print("  [created] CLAUDE.md (fill in the TODOs for better debate quality)")
+
+    print()
+
+    # Step 3: First run guidance
+    print("Step 3/3  Ready to go")
+    print("-" * 40)
+    print()
+    print("Try your first debate:")
+    print("  %s" % _SAMPLE_DEBATE)
+    print()
+    print("Or review your current changes:")
+    print("  ao review")
+    print()
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -631,6 +789,22 @@ Read `.alpha-omega/INDEX.md` and project docs before answering.
             f.write(agents_content)
         print("Created AGENTS.md (Omega's memory)")
 
+    # CLAUDE.md (for Alpha/Claude) — only if it doesn't exist
+    claude_md = os.path.join(project_dir, "CLAUDE.md")
+    if not os.path.isfile(claude_md):
+        project_name = os.path.basename(os.path.abspath(project_dir))
+        with open(claude_md, "w", encoding="utf-8") as f:
+            f.write("# %s\n\n" % project_name)
+            f.write("## What this project is\n\n")
+            f.write("<!-- TODO: Describe what this project does -->\n\n")
+            f.write("## Architecture\n\n")
+            f.write("<!-- TODO: Key files, modules, how things connect -->\n\n")
+            f.write("## Commands\n\n")
+            f.write("<!-- TODO: How to build, test, run -->\n\n")
+            f.write("## Constraints\n\n")
+            f.write("<!-- TODO: Language version, dependencies, rules -->\n\n")
+        print("Created CLAUDE.md (Alpha's memory — fill in the TODOs)")
+
     print("Initialized .alpha-omega/ in %s" % project_dir)
     print("  %s" % os.path.join(ao_dir, "INDEX.md"))
     print("  %s" % os.path.join(ao_dir, "decisions.md"))
@@ -807,6 +981,9 @@ def main():
 
     sub = parser.add_subparsers(dest="command")
 
+    # setup
+    sub.add_parser("setup", help="First-time setup: check prerequisites + init project")
+
     # doctor
     sub.add_parser("doctor", help="Check prerequisites and project state")
 
@@ -892,9 +1069,10 @@ def main():
         return cmd_history(args)
     elif args.command == "status":
         return cmd_status(args)
+    elif args.command == "setup":
+        return cmd_setup(args)
     else:
-        parser.print_help()
-        return 0
+        return _show_welcome(args)
 
 
 if __name__ == "__main__":
