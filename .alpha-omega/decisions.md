@@ -85,3 +85,17 @@ Decision log for this project.
 **Winner:** canonical index
 **Scores:** Alpha 0.000 / Omega 0.857 / Agreement 0.76
 **Dissent:** Dissenting option: 
+
+### ao_1776087411 — 2026-04-13 13:42 UTC
+
+**Q:** USER ONBOARDING JOURNEY: Design the complete first-time user experience for Alpha-Omega. Current problems: (1) Prerequisites are heavy — user needs Python + claude CLI + codex CLI + auth for both. ao 
+**Resolution:** DEADLOCK
+**Scores:** Alpha 0.000 / Omega 0.000 / Agreement 0.74
+
+### ao_1776087791 — 2026-04-13 13:49 UTC
+
+**Q:** USER ONBOARDING: Design the ideal first-time experience for a CLI tool that requires two external AI CLIs (claude + codex). Best practices from similar tools: eslint uses 'eslint --init' with guided q
+**Resolution:** ADOPT_WITH_DISSENT
+**Winner:** setup command
+**Scores:** Alpha 0.000 / Omega 0.890 / Agreement 0.75
+**Dissent:** Dissenting option: 
