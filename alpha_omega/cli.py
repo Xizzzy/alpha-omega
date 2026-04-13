@@ -115,17 +115,9 @@ def cmd_setup(args):
     check("Claude CLI", claude_path is not None,
           fix="Install: https://docs.anthropic.com/en/docs/claude-code")
     if claude_path:
-        claude_creds = os.path.expanduser("~/.claude/.credentials.json")
-        has_claude_auth = os.path.isfile(claude_creds)
-        if has_claude_auth:
-            try:
-                with open(claude_creds, encoding="utf-8") as f:
-                    creds = json.load(f)
-                has_claude_auth = bool(creds.get("claudeAiOauth"))
-            except (json.JSONDecodeError, OSError):
-                has_claude_auth = False
+        has_claude_auth = _check_claude_auth()
         check("Claude auth", has_claude_auth,
-              fix="Run: claude  (will prompt for login)")
+              fix="Run: claude auth login")
 
     check("Codex CLI", codex_path is not None,
           fix="Install: npm install -g @openai/codex")
@@ -227,6 +219,19 @@ def cmd_setup(args):
     return 0
 
 
+def _check_claude_auth():
+    """Check Claude auth via 'claude auth status'. Returns True if logged in."""
+    try:
+        result = subprocess.run(
+            ["claude", "auth", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(result.stdout)
+        return data.get("loggedIn", False)
+    except (json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
 _SKILL_CONTENT = """---
 name: alpha-omega
 description: "Run an Alpha-Omega dual-brain debate. Two different AI systems (Claude + Codex) independently analyze a problem, then debate to find blind spots."
@@ -317,20 +322,9 @@ def cmd_doctor(args):
         except Exception:
             check("Claude version check", False, fix="Run: claude --version")
 
-        claude_creds = os.path.expanduser("~/.claude/.credentials.json")
-        has_claude_auth = os.path.isfile(claude_creds)
-        if has_claude_auth:
-            try:
-                with open(claude_creds, encoding="utf-8") as f:
-                    creds = json.load(f)
-                has_claude_auth = bool(creds.get("claudeAiOauth"))
-            except (json.JSONDecodeError, OSError):
-                has_claude_auth = False
-        check(
-            "Claude auth" + (" (~/.claude/.credentials.json)" if has_claude_auth else ""),
-            has_claude_auth,
-            fix="Run: claude  (will prompt for login)",
-        )
+        has_claude_auth = _check_claude_auth()
+        check("Claude auth", has_claude_auth,
+              fix="Run: claude auth login")
 
     # Codex CLI
     codex_path = shutil.which("codex")
