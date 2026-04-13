@@ -18,10 +18,6 @@ The goal: cover each other's blind spots. Not two opinions — one better soluti
 - `core/context_builder.py` — project context assembly
 - `core/artifacts.py` — output generator
 
-## Origin
-
-Extracted from a crypto trading bot project where it ran as `brain.py` (continuous daemon) and `committee.py` (session-based). The trading-specific parts were removed; what remains is a domain-agnostic debate protocol.
-
 ## Self-development
 
 This repo is bootstrapped: `.alpha-omega/` is initialized, and debates about the tool's own development are saved here. Check `.alpha-omega/decisions.md` for prior decisions before proposing changes.

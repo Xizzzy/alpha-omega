@@ -49,10 +49,6 @@ alpha_omega/
 - Per-project memory: `.alpha-omega/` directory (decisions.md, debates/)
 - Omega memory: `AGENTS.md` at project root (Codex reads automatically)
 
-## Origin
-
-Extracted from makemoney project (crypto trading bot) where it ran as brain.py daemon + committee.py sessions. Generalized to work for any domain.
-
 ## Development
 
 - Python 3.9+ (no 3.10+ syntax)
@@ -84,6 +80,6 @@ ao history
 ## Rules
 
 - NEVER hardcode project-specific paths — everything via --project or cwd
-- Prompts must be domain-agnostic (no trading jargon in templates)
+- Prompts must be domain-agnostic
 - Sigma must be deterministic (no LLM calls in resolution)
 - Blind phase is sacred — never show Alpha's output to Omega before Omega commits

@@ -17,8 +17,8 @@ log = logging.getLogger("ao.sigma")
 # Resolution states
 # ---------------------------------------------------------------------------
 
-# Unlike trading Sigma (APPROVED/REJECTED), Design Sigma has richer outcomes
-# because design decisions often depend on user values, not just logic.
+# Design Sigma has rich outcomes because design decisions often depend
+# on user values, not just logic.
 
 RESOLUTION_STATES = {
     "ADOPT",                  # Strong consensus, clear winner
@@ -35,7 +35,7 @@ RESOLUTION_STATES = {
 # ---------------------------------------------------------------------------
 
 # These weights determine how Sigma evaluates option quality.
-# Tuned for design decisions (not trading actions).
+# Tuned for design decisions.
 
 WEIGHTS = {
     "evidence_quality": 0.30,     # How well-sourced are the claims?
