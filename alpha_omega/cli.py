@@ -226,6 +226,119 @@ def cmd_debate(args):
     return 0
 
 
+def cmd_review(args):
+    """Run a lightweight dual-brain code review."""
+    from .context_builder import build_review_context
+    from .review import ReviewSession
+
+    project_dir = args.project or os.getcwd()
+
+    # Determine scope
+    if args.branch:
+        scope = "branch:%s" % args.branch
+    elif args.staged:
+        scope = "staged"
+    else:
+        scope = "unstaged"
+
+    print("Alpha-Omega Review")
+    print("=" * 40)
+    print("Scope: %s" % scope)
+    print("Project: %s" % project_dir)
+    print()
+
+    # Build review context
+    review_ctx = build_review_context(project_dir, scope)
+
+    if not review_ctx.get("diff", "").strip():
+        print("No changes to review.")
+        return 0
+
+    print("Files changed: %d" % len(review_ctx.get("files_changed", [])))
+    for f_name in review_ctx.get("files_changed", [])[:10]:
+        print("  %s" % f_name)
+    if len(review_ctx.get("files_changed", [])) > 10:
+        print("  ... and %d more" % (len(review_ctx["files_changed"]) - 10))
+    print()
+
+    # Run review
+    session = ReviewSession(
+        review_ctx,
+        model=getattr(args, "model", None),
+        timeout=getattr(args, "timeout", None),
+    )
+    result = session.run()
+
+    if "error" in result:
+        print("ERROR: %s" % result["error"], file=sys.stderr)
+        return 1
+
+    # Render output
+    verdict = result.get("verdict", "?")
+    verdict_icon = {"safe": "SAFE", "risky": "RISKY", "needs-debate": "NEEDS DEBATE"}.get(verdict, verdict.upper())
+
+    print("=" * 40)
+    print("Verdict: %s" % verdict_icon)
+    print("Agreement: %s" % result.get("agreement", "?"))
+    print("Duration: %.0fs" % result.get("duration_s", 0))
+    print("=" * 40)
+    print()
+
+    # Alpha & Omega summaries
+    if result.get("alpha_summary"):
+        print("Alpha: %s" % result["alpha_summary"])
+    if result.get("omega_summary"):
+        print("Omega: %s" % result["omega_summary"])
+    if result.get("alpha_summary") or result.get("omega_summary"):
+        print()
+
+    # Risks
+    risks = result.get("risks", [])
+    if risks:
+        print("Risks (%d):" % len(risks))
+        for risk in risks:
+            sev = risk.get("severity", "?")
+            desc = risk.get("description", "")
+            f_name = risk.get("file", "")
+            if f_name:
+                print("  [%s] %s (%s)" % (sev, desc, f_name))
+            else:
+                print("  [%s] %s" % (sev, desc))
+        print()
+
+    # Missing tests
+    tests = result.get("missing_tests", [])
+    if tests:
+        print("Missing tests:")
+        for t in tests:
+            print("  - %s" % t)
+        print()
+
+    # Dissent
+    if result.get("dissent"):
+        print("Dissent: %s" % result["dissent"])
+        print()
+
+    # Escalation
+    if result.get("should_escalate"):
+        print(">>> Auto-escalation recommended: %s" % result.get("escalation_reason", ""))
+        print('>>> Run: ao debate "Review escalation: %s"' % " ".join(
+            review_ctx.get("files_changed", [])[:3]))
+        print()
+
+    # Save if requested
+    if args.save:
+        ao_dir = os.path.join(project_dir, ".alpha-omega")
+        reviews_dir = os.path.join(ao_dir, "reviews")
+        os.makedirs(reviews_dir, exist_ok=True)
+        review_file = os.path.join(reviews_dir, "%s.json" % result["session_id"])
+        with open(review_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, default=str)
+        print("Review saved to: %s" % review_file)
+
+    return 0
+
+
 def cmd_implement(args):
     """Run implementation based on a resolved debate session."""
     from .primitives import run_alpha, run_omega, parse_json_response
@@ -615,6 +728,19 @@ def main():
     p_debate.add_argument("--timeout", type=int, default=None,
                           help="Timeout per brain call in seconds (default: 300)")
 
+    # review
+    p_review = sub.add_parser("review", help="Lightweight dual-brain code review")
+    p_review.add_argument("--staged", action="store_true",
+                          help="Review staged changes (git diff --cached)")
+    p_review.add_argument("--branch", default=None,
+                          help="Review changes since branch (e.g. main)")
+    p_review.add_argument("--save", action="store_true",
+                          help="Save review to .alpha-omega/reviews/")
+    p_review.add_argument("--model", default=None,
+                          help="Alpha model (default: claude-sonnet-4-5)")
+    p_review.add_argument("--timeout", type=int, default=None,
+                          help="Timeout per brain in seconds (default: 180)")
+
     # implement
     p_impl = sub.add_parser("implement", help="Implement a debate resolution")
     p_impl.add_argument("session_id", help="Session ID (e.g. ao_1776081171)")
@@ -645,6 +771,8 @@ def main():
         return cmd_doctor(args)
     elif args.command == "debate":
         return cmd_debate(args)
+    elif args.command == "review":
+        return cmd_review(args)
     elif args.command == "implement":
         return cmd_implement(args)
     elif args.command == "init":
