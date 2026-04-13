@@ -76,8 +76,9 @@ Rules:
 - Generate 2-4 options (not just one)
 - Score each option honestly (don't inflate your recommendation)
 - The "blind_spots_i_might_have" field is critical — this is what the other brain will check
-- If you need to search for information, do it before answering
+- Do NOT use tools or read files — all project context is provided above
 - Be concrete, not abstract. Names, numbers, architectures — not "consider various approaches"
+- Respond with ONLY the JSON object, no other text
 """
 
 CRITIQUE_PROMPT = """You are in the CRITIQUE phase of an Alpha-Omega debate.
@@ -131,6 +132,8 @@ Rules:
 - You MUST steelman before critiquing (show you understood their position)
 - Empty concessions list = you learned nothing from them. This is unlikely — be honest.
 - If their option is genuinely better, switch. Ego is not a design criterion.
+- Do NOT use tools or read files — all context is provided above
+- Respond with ONLY the JSON object, no other text
 """
 
 # ---------------------------------------------------------------------------

@@ -54,10 +54,12 @@ class BrainResult:
 
 
 def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None,
-              max_turns=1, phase="unknown"):
+              max_turns=1, phase="unknown", allow_tools=False):
     """Run Claude CLI non-interactively. Returns BrainResult.
 
     Alpha = Claude. Uses `claude --print` with JSON output for usage tracking.
+    allow_tools=False (default) disables tool use for debate/review phases.
+    allow_tools=True enables tools for implementation phase.
     """
     if work_dir is None:
         work_dir = os.getcwd()
@@ -65,17 +67,21 @@ def run_alpha(prompt, timeout=300, model="claude-sonnet-4-5", work_dir=None,
     r = BrainResult(brain="Alpha", phase=phase)
     start = time.time()
 
+    cmd = [
+        "claude",
+        "--print",
+        "--model", model,
+        "--dangerously-skip-permissions",
+        "--no-session-persistence",
+        "--max-turns", str(max_turns),
+        "--output-format", "json",
+    ]
+    if not allow_tools:
+        cmd.extend(["--allowedTools", ""])
+
     try:
         result = subprocess.run(
-            [
-                "claude",
-                "--print",
-                "--model", model,
-                "--dangerously-skip-permissions",
-                "--no-session-persistence",
-                "--max-turns", str(max_turns),
-                "--output-format", "json",
-            ],
+            cmd,
             input=prompt,
             capture_output=True,
             text=True,
