@@ -3,3 +3,4 @@ __pycache__/
 .env
 *.db
 /tmp/
+alpha_omega.egg-info/

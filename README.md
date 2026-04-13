@@ -4,21 +4,42 @@ Dual-brain thinking tool. Two genuinely different AI systems (Claude + Codex) in
 
 **Not two opinions. One solution where blind spots are already covered.**
 
+## Install
+
+```bash
+# Install with pipx (recommended)
+pipx install alpha-omega
+
+# Or with pip
+pip install alpha-omega
+
+# Or run directly from source
+python3 ao.py <command>
+```
+
 ## Quick start
 
 ```bash
-# Initialize AO in your project
-python3 ~/alpha-omega/ao.py init
+# 1. Check prerequisites
+ao doctor
 
-# Run a debate
-python3 ~/alpha-omega/ao.py debate "Should we use PostgreSQL or SQLite for this project?"
+# 2. Initialize AO in your project
+cd your-project
+ao init
 
-# With extra context files
-python3 ~/alpha-omega/ao.py debate --extra schema.sql --extra requirements.txt "Design the data layer"
+# 3. Run a debate
+ao debate "Should we use PostgreSQL or SQLite for this project?"
 
-# Different modes
-python3 ~/alpha-omega/ao.py debate --mode specify "Design the authentication subsystem"
-python3 ~/alpha-omega/ao.py debate --mode audit "Review the current API rate limiting"
+# 4. With extra context files
+ao debate --extra schema.sql --extra requirements.txt "Design the data layer"
+
+# 5. Different modes
+ao debate --mode specify "Design the authentication subsystem"
+ao debate --mode audit "Review the current API rate limiting"
+
+# 6. Check history
+ao history
+ao status
 ```
 
 ## How it works
@@ -59,29 +80,33 @@ User Question
 
 ## Requirements
 
-- [Claude Code CLI](https://claude.ai/code) (`claude` in PATH)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude` in PATH)
 - [OpenAI Codex CLI](https://github.com/openai/codex) (`codex` in PATH)
 - Python 3.9+
+
+Run `ao doctor` to verify all prerequisites.
 
 ## Project structure
 
 ```
-~/alpha-omega/
-├── ao.py              # CLI entry point
-├── core/
-│   ├── primitives.py  # Claude + Codex CLI wrappers
-│   ├── protocol.py    # Debate orchestrator
-│   ├── sigma.py       # Design Sigma resolver
-│   ├── context_builder.py  # Project context assembly
-│   └── artifacts.py   # Artifact pack generator
-└── templates/         # (future) init templates
+alpha-omega/
+├── ao.py                  # Backward-compatible entry point
+├── pyproject.toml         # Package metadata
+├── alpha_omega/
+│   ├── cli.py             # CLI commands (doctor, debate, init, ...)
+│   ├── primitives.py      # Claude + Codex CLI wrappers
+│   ├── protocol.py        # Debate orchestrator
+│   ├── sigma.py           # Design Sigma resolver (deterministic, no LLM)
+│   ├── context_builder.py # Project context assembly
+│   └── artifacts.py       # Artifact pack generator
 
 Your project/
-├── .alpha-omega/      # AO memory (created by `ao init`)
+├── .alpha-omega/          # AO memory (created by `ao init`)
 │   ├── INDEX.md
-│   ├── decisions.md   # Decision log
-│   └── debates/       # Full transcripts
-└── AGENTS.md          # Omega's persistent memory
+│   ├── decisions.md       # Decision log
+│   └── debates/           # Full transcripts
+├── AGENTS.md              # Omega's persistent memory
+└── CLAUDE.md              # Alpha's persistent memory
 ```
 
 ## Integration with Claude Code

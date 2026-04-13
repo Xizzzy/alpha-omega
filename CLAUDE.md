@@ -9,13 +9,15 @@ CLI tool that orchestrates structured debates between two genuinely different AI
 ## Architecture
 
 ```
-ao.py                  CLI entry point (debate/init/history/status)
-core/
-  primitives.py        Claude + Codex CLI wrappers (run_alpha, run_omega)
-  protocol.py          Debate orchestrator (DebateSession) — the heart
-  sigma.py             Design Sigma — deterministic resolver, no LLM
-  context_builder.py   Assembles project context for both brains
-  artifacts.py         Generates markdown artifact pack + saves to project
+ao.py                       Backward-compatible wrapper
+pyproject.toml              Package metadata, `ao` entry point
+alpha_omega/
+  cli.py                    CLI commands (doctor, debate, init, history, status)
+  primitives.py             Claude + Codex CLI wrappers (run_alpha, run_omega)
+  protocol.py               Debate orchestrator (DebateSession) — the heart
+  sigma.py                  Design Sigma — deterministic resolver, no LLM
+  context_builder.py        Assembles project context for both brains
+  artifacts.py              Generates markdown artifact pack + saves to project
 ```
 
 ## Protocol flow
@@ -55,7 +57,8 @@ Extracted from makemoney project (crypto trading bot) where it ran as brain.py d
 
 - Python 3.9+ (no 3.10+ syntax)
 - stdlib only (no pip dependencies)
-- Test: `python3 ao.py debate --project /path/to/project "question"`
+- Install: `pip install -e .` (editable) or `pipx install .`
+- Test: `ao debate "question"` or `python3 ao.py debate "question"`
 
 ## Self-development with AO
 
@@ -67,15 +70,15 @@ When to run a debate before making changes:
 - Adding new features to the protocol or Sigma
 - Any change where the right approach isn't obvious
 
-How to invoke (--project is a global flag, goes before the subcommand):
+How to invoke:
 ```bash
-python3 ao.py --project . debate "your question about the change"
-python3 ao.py --project . debate --extra core/sigma.py "should we change scoring weights?"
+ao debate "your question about the change"
+ao debate --extra alpha_omega/sigma.py "should we change scoring weights?"
 ```
 
 Check past decisions before starting new work:
 ```bash
-python3 ao.py history
+ao history
 ```
 
 ## Rules

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha-omega"
+version = "0.2.0"
+description = "Dual-brain debate protocol — Claude (Alpha) vs Codex (Omega)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "Yegor Bolshakov"},
+]
+keywords = ["ai", "debate", "multi-agent", "claude", "codex", "dual-brain"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+ao = "alpha_omega.cli:main"
+
+[project.urls]
+Repository = "https://github.com/xizzzy/alpha-omega"
+
+[tool.setuptools.packages.find]
+include = ["alpha_omega*"]
