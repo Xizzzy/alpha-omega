@@ -107,3 +107,9 @@ Decision log for this project.
 **Winner:** hardening sweep
 **Scores:** Alpha 0.000 / Omega 0.897 / Agreement 0.70
 **Dissent:** Dissenting option: 
+
+### ao_1776099841 — 2026-04-13 17:07 UTC
+
+**Q:** Quick test: both brains should now produce scored options. Alpha was broken before (always 0.000 due to tool_use consuming max_turns=1). Confirm both brains are working by each proposing a different n
+**Resolution:** NEEDS_USER_CHOICE
+**Scores:** Alpha 0.896 / Omega 0.839 / Agreement 0.76
