@@ -226,6 +226,241 @@ def cmd_debate(args):
     return 0
 
 
+def cmd_implement(args):
+    """Run implementation based on a resolved debate session."""
+    from .primitives import run_alpha, run_omega, parse_json_response
+
+    project_dir = args.project or os.getcwd()
+    session_id = args.session_id
+    executor = args.executor
+
+    # Load session JSON
+    session_file = os.path.join(project_dir, ".alpha-omega", "sessions", "%s.json" % session_id)
+    if not os.path.isfile(session_file):
+        print("Error: session file not found: %s" % session_file, file=sys.stderr)
+        print("Run 'ao history' to see available sessions.", file=sys.stderr)
+        return 1
+
+    with open(session_file, encoding="utf-8") as f:
+        session = json.load(f)
+
+    # Check if implementable
+    if not session.get("implementable", False):
+        print("Error: session %s is not implementable (resolution: %s)" % (
+            session_id, session.get("resolution", "?")), file=sys.stderr)
+        print("Only ADOPT and ADOPT_WITH_DISSENT sessions can be implemented.", file=sys.stderr)
+        return 1
+
+    try:
+        executor = _resolve_implement_executor(session, executor, session_id)
+    except ValueError as exc:
+        print("Error: %s" % exc, file=sys.stderr)
+        return 1
+
+    # Check lock
+    lock_file = os.path.join(project_dir, ".alpha-omega", "sessions", "%s.lock.json" % session_id)
+    if os.path.isfile(lock_file):
+        with open(lock_file, encoding="utf-8") as f:
+            lock_info = json.load(f)
+        print("Error: session %s is locked by %s at %s" % (
+            session_id, lock_info.get("executor", "?"), lock_info.get("started", "?")),
+            file=sys.stderr)
+        print("Use --force to override.", file=sys.stderr)
+        if not args.force:
+            return 1
+        print("Forcing lock override...", file=sys.stderr)
+
+    # Acquire lock
+    import time as _time
+    lock_data = {
+        "executor": executor,
+        "started": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
+        "pid": os.getpid(),
+    }
+    with open(lock_file, "w", encoding="utf-8") as f:
+        json.dump(lock_data, f, indent=2)
+
+    # Build implementation prompt
+    brief = session.get("implementation_brief", {})
+    prompt = _build_implement_prompt(brief, executor, project_dir)
+
+    print("=" * 60)
+    print("Alpha-Omega Implementation")
+    print("=" * 60)
+    print("Session: %s" % session_id)
+    print("Executor: %s (%s)" % (executor.upper(), "Claude" if executor == "alpha" else "Codex"))
+    print("Resolution: %s" % session.get("resolution", "?"))
+    print("Winning option: %s" % session.get("winning_option", "?"))
+    print("=" * 60)
+    print()
+
+    # Run implementation
+    timeout = args.timeout or 900
+    if executor == "alpha":
+        model = args.model or "claude-sonnet-4-5"
+        result = run_alpha(prompt, timeout=timeout, model=model,
+                           work_dir=project_dir, max_turns=6, phase="implement")
+    else:
+        result = run_omega(prompt, timeout=timeout,
+                           work_dir=project_dir, phase="implement")
+
+    # Parse completion report
+    report = parse_json_response(result.text, source=executor)
+    if not report.get("_parse_ok"):
+        report = {
+            "status": "partial" if result.ok else "failed",
+            "summary": result.text[:2000] if result.text else (result.error or "No output"),
+            "files_changed": [],
+            "commands_ran": [],
+            "blockers": [result.error] if result.error else [],
+            "next_steps": [],
+        }
+
+    # Record attempt
+    attempt = {
+        "executor": executor,
+        "timestamp": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
+        "status": report.get("status", "unknown"),
+        "summary": report.get("summary", ""),
+        "files_changed": report.get("files_changed", []),
+        "commands_ran": report.get("commands_ran", []),
+        "blockers": report.get("blockers", []),
+        "next_steps": report.get("next_steps", []),
+        "duration_s": round(result.duration, 1),
+    }
+    session.setdefault("attempts", []).append(attempt)
+
+    # Save updated session
+    with open(session_file, "w", encoding="utf-8") as f:
+        json.dump(session, f, indent=2, default=str)
+
+    # Release lock
+    try:
+        os.remove(lock_file)
+    except OSError:
+        pass
+
+    # Show results
+    print()
+    print("=" * 60)
+    print("Implementation Result: %s" % attempt["status"].upper())
+    print("=" * 60)
+    print()
+
+    if attempt.get("summary"):
+        print(attempt["summary"][:3000])
+        print()
+
+    if attempt.get("files_changed"):
+        print("Files changed:")
+        for f_name in attempt["files_changed"]:
+            print("  %s" % f_name)
+        print()
+
+    if attempt.get("blockers"):
+        print("Blockers:")
+        for b in attempt["blockers"]:
+            print("  - %s" % b)
+        print()
+
+    if attempt.get("next_steps"):
+        print("Next steps:")
+        for s in attempt["next_steps"]:
+            print("  - %s" % s)
+        print()
+
+    # Show git diff stat
+    try:
+        diff_result = subprocess.run(
+            ["git", "diff", "--stat"],
+            capture_output=True, text=True, cwd=project_dir, timeout=10,
+        )
+        if diff_result.stdout.strip():
+            print("Git changes:")
+            print(diff_result.stdout)
+    except Exception:
+        pass
+
+    print("Duration: %.1fs" % result.duration)
+    print("Session updated: %s" % session_file)
+
+    return 0 if attempt["status"] == "completed" else 1
+
+
+def _resolve_implement_executor(session, executor, session_id):
+    """Resolve implement executor, failing on ambiguous winner-based selection."""
+    if executor != "winner":
+        return executor
+
+    winning_brain = session.get("winning_brain")
+    if winning_brain in ("alpha", "omega"):
+        return winning_brain
+
+    raise ValueError(
+        "session %s has ambiguous winning_brain=%r; rerun with --executor alpha or --executor omega." % (
+            session_id, winning_brain)
+    )
+
+
+def _build_implement_prompt(brief, executor, project_dir):
+    """Build focused implementation prompt — code, not debate."""
+    role = "Alpha (Claude)" if executor == "alpha" else "Omega (Codex)"
+
+    parts = []
+    parts.append("# Implementation Task")
+    parts.append("")
+    parts.append("You are %s. A dual-brain debate has concluded. Your job now is to" % role)
+    parts.append("IMPLEMENT the winning solution. Do NOT re-debate or suggest alternatives.")
+    parts.append("")
+    parts.append("## Resolution")
+    parts.append("")
+    parts.append("**Winning option:** %s" % brief.get("winning_option", ""))
+    parts.append("**What it is:** %s" % brief.get("winning_thesis", ""))
+    parts.append("**Goal:** %s" % brief.get("goal", ""))
+    parts.append("")
+
+    if brief.get("dissent"):
+        parts.append("**Dissent recorded:** %s" % brief["dissent"])
+        parts.append("(Address this concern if possible, but do not change the winning approach.)")
+        parts.append("")
+
+    if brief.get("constraints"):
+        parts.append("## Constraints")
+        for c in brief["constraints"]:
+            parts.append("- %s" % c)
+        parts.append("")
+
+    if brief.get("open_questions"):
+        parts.append("## Open Questions (resolve as you go)")
+        for q in brief["open_questions"]:
+            parts.append("- %s" % q)
+        parts.append("")
+
+    parts.append("## Instructions")
+    parts.append("")
+    parts.append("1. Read the relevant files in the project")
+    parts.append("2. Edit code to implement the winning option")
+    parts.append("3. Run any relevant tests or checks")
+    parts.append("4. When done, output a JSON completion report:")
+    parts.append("")
+    parts.append("```json")
+    parts.append('{')
+    parts.append('    "status": "completed|partial|failed",')
+    parts.append('    "summary": "1-3 sentences of what you did",')
+    parts.append('    "files_changed": ["path/to/file1.py", "path/to/file2.py"],')
+    parts.append('    "commands_ran": ["pytest tests/", "python -m myapp"],')
+    parts.append('    "checks": ["tests pass", "no import errors"],')
+    parts.append('    "blockers": ["list any issues preventing completion"],')
+    parts.append('    "next_steps": ["what remains to be done, if anything"]')
+    parts.append('}')
+    parts.append("```")
+    parts.append("")
+    parts.append("IMPORTANT: Write code, edit files, run commands. Do NOT just describe")
+    parts.append("what should be done — actually do it. End with the JSON report above.")
+
+    return "\n".join(parts)
+
+
 def cmd_init(args):
     """Bootstrap .alpha-omega/ in the current project."""
     project_dir = args.project or os.getcwd()
@@ -380,6 +615,19 @@ def main():
     p_debate.add_argument("--timeout", type=int, default=None,
                           help="Timeout per brain call in seconds (default: 300)")
 
+    # implement
+    p_impl = sub.add_parser("implement", help="Implement a debate resolution")
+    p_impl.add_argument("session_id", help="Session ID (e.g. ao_1776081171)")
+    p_impl.add_argument("--executor", default="winner",
+                        choices=["alpha", "omega", "winner"],
+                        help="Which brain implements (default: winner)")
+    p_impl.add_argument("--model", default=None,
+                        help="Alpha model for implementation")
+    p_impl.add_argument("--timeout", type=int, default=None,
+                        help="Timeout in seconds (default: 900)")
+    p_impl.add_argument("--force", action="store_true",
+                        help="Override existing lock")
+
     # init
     sub.add_parser("init", help="Bootstrap .alpha-omega/ in project")
 
@@ -397,6 +645,8 @@ def main():
         return cmd_doctor(args)
     elif args.command == "debate":
         return cmd_debate(args)
+    elif args.command == "implement":
+        return cmd_implement(args)
     elif args.command == "init":
         return cmd_init(args)
     elif args.command == "history":

@@ -62,6 +62,8 @@ def generate_artifact_pack(question, alpha_memo, omega_memo,
         "markdown": md,
         "decision": decision,
         "session_id": session_id,
+        "_alpha_memo": alpha_memo,
+        "_omega_memo": omega_memo,
     }
 
 
@@ -69,7 +71,9 @@ def save_to_project(artifact_pack, project_dir):
     """Save debate results to .alpha-omega/ in the project directory."""
     ao_dir = os.path.join(project_dir, ".alpha-omega")
     debates_dir = os.path.join(ao_dir, "debates")
+    sessions_dir = os.path.join(ao_dir, "sessions")
     os.makedirs(debates_dir, exist_ok=True)
+    os.makedirs(sessions_dir, exist_ok=True)
 
     session_id = artifact_pack.get("session_id", "unknown")
     decision = artifact_pack.get("decision", {})
@@ -81,6 +85,13 @@ def save_to_project(artifact_pack, project_dir):
         f.write(markdown)
     log.info("Debate saved to %s", debate_file)
 
+    # Save structured session JSON (foundation for ao implement)
+    session_file = os.path.join(sessions_dir, "%s.json" % session_id)
+    session_data = _build_session_json(artifact_pack)
+    with open(session_file, "w", encoding="utf-8") as f:
+        json.dump(session_data, f, indent=2, default=str)
+    log.info("Session JSON saved to %s", session_file)
+
     # Append to decisions.md
     decisions_file = os.path.join(ao_dir, "decisions.md")
     entry = _format_decision_entry(decision)
@@ -89,6 +100,69 @@ def save_to_project(artifact_pack, project_dir):
     log.info("Decision appended to %s", decisions_file)
 
     return debate_file
+
+
+def _build_session_json(artifact_pack):
+    """Build structured session JSON for ao implement."""
+    decision = artifact_pack.get("decision", {})
+    resolution = decision.get("resolution", "")
+    winning_option = decision.get("winning_option")
+
+    # Determine winning brain
+    alpha_rec = decision.get("alpha_recommendation", "")
+    omega_rec = decision.get("omega_recommendation", "")
+    if winning_option:
+        w = winning_option.lower().strip()
+        if alpha_rec.lower().strip() == w and omega_rec.lower().strip() == w:
+            winning_brain = "both"
+        elif alpha_rec.lower().strip() == w:
+            winning_brain = "alpha"
+        elif omega_rec.lower().strip() == w:
+            winning_brain = "omega"
+        else:
+            winning_brain = "unknown"
+    else:
+        winning_brain = None
+
+    # Build implementation brief from decision data
+    brief = {
+        "goal": decision.get("question", ""),
+        "resolution": resolution,
+        "winning_option": winning_option,
+        "winning_thesis": "",  # filled from memo options below
+        "constraints": [],
+        "dissent": decision.get("dissent"),
+        "open_questions": decision.get("open_questions", []),
+    }
+
+    # Extract winning thesis from memos stored in artifact pack
+    for memo_key in ("_alpha_memo", "_omega_memo"):
+        memo = artifact_pack.get(memo_key, {})
+        if memo:
+            for opt in memo.get("options", []):
+                if opt.get("name", "").lower().strip() == (winning_option or "").lower().strip():
+                    brief["winning_thesis"] = opt.get("thesis", "")
+                    brief["constraints"] = opt.get("cons", [])
+                    break
+
+    implementable = resolution in ("ADOPT", "ADOPT_WITH_DISSENT")
+
+    return {
+        "session_id": decision.get("session_id", ""),
+        "timestamp": decision.get("timestamp", ""),
+        "question": decision.get("question", ""),
+        "resolution": resolution,
+        "winning_option": winning_option,
+        "winning_brain": winning_brain,
+        "implementable": implementable,
+        "implementation_brief": brief,
+        "scores": {
+            "alpha": decision.get("score_alpha", 0),
+            "omega": decision.get("score_omega", 0),
+            "agreement": decision.get("agreement_level", 0),
+        },
+        "attempts": [],
+    }
 
 
 # ---------------------------------------------------------------------------
