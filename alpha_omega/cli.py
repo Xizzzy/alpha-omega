@@ -27,7 +27,7 @@ import sys
 from .protocol import DebateSession
 from .artifacts import save_to_project
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 
 def setup_logging(verbose=False):
@@ -439,13 +439,21 @@ def cmd_debate(args):
     print("=" * 60)
     print()
 
+    # Precedence: specific flag > shared --timeout > config value.
+    shared_timeout = getattr(args, "timeout", None)
+    alpha_timeout = getattr(args, "alpha_timeout", None) or shared_timeout or config["alpha_timeout"]
+    omega_timeout = getattr(args, "omega_timeout", None) or shared_timeout or config["omega_timeout"]
+    alpha_max_turns = getattr(args, "alpha_max_turns", None) or config["alpha_max_turns"]
+
     session = DebateSession(
         question=question,
         project_dir=project_dir,
         extra_files=extra_files,
         mode=args.mode,
         model=getattr(args, "model", None) or config["alpha_model"],
-        timeout=getattr(args, "timeout", None) or config["alpha_timeout"],
+        alpha_timeout=alpha_timeout,
+        omega_timeout=omega_timeout,
+        alpha_max_turns=alpha_max_turns,
     )
 
     result = session.run()
@@ -1132,7 +1140,16 @@ def main():
     p_debate.add_argument("--model", default=None,
                           help="Alpha model (default: claude-sonnet-4-5)")
     p_debate.add_argument("--timeout", type=int, default=None,
-                          help="Timeout per brain call in seconds (default: 300)")
+                          help="Shared timeout override for both brains (seconds)")
+    p_debate.add_argument("--alpha-timeout", type=int, default=None,
+                          dest="alpha_timeout",
+                          help="Alpha-only timeout (seconds, default: 300 from config)")
+    p_debate.add_argument("--omega-timeout", type=int, default=None,
+                          dest="omega_timeout",
+                          help="Omega-only timeout (seconds, default: 600 from config)")
+    p_debate.add_argument("--alpha-max-turns", type=int, default=None,
+                          dest="alpha_max_turns",
+                          help="Max tool-use turns for Alpha (default: 8 from config)")
 
     # review
     p_review = sub.add_parser("review", help="Lightweight dual-brain code review")

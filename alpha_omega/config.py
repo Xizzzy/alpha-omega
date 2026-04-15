@@ -18,7 +18,7 @@ log = logging.getLogger("ao.config")
 DEFAULTS = {
     "alpha_model": "claude-sonnet-4-5",
     "alpha_timeout": 300,
-    "alpha_max_turns": 5,
+    "alpha_max_turns": 8,
     "omega_timeout": 600,
     "review_timeout": 180,
     "implement_timeout": 900,

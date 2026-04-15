@@ -145,13 +145,19 @@ class DebateSession:
     """Orchestrates a single Alpha-Omega debate session."""
 
     def __init__(self, question, project_dir=None, extra_files=None, mode="explore",
-                 model=None, timeout=None):
+                 model=None, timeout=None, alpha_timeout=None, omega_timeout=None,
+                 alpha_max_turns=None):
         self.question = question
         self.project_dir = project_dir or os.getcwd()
         self.extra_files = extra_files or []
         self.mode = mode  # explore | specify | build | audit
         self.model = model or "claude-sonnet-4-5"
-        self.timeout = timeout or 300
+        # Per-brain timeouts; legacy `timeout=` is a fallback for external callers.
+        self.alpha_timeout = alpha_timeout or timeout or 300
+        self.omega_timeout = omega_timeout or timeout or 600
+        self.alpha_max_turns = alpha_max_turns or 8
+        # Kept for backward compat with any code reading session.timeout directly.
+        self.timeout = self.alpha_timeout
         self.session_id = "ao_%d" % int(time.time())
 
         self.context = None
@@ -171,7 +177,8 @@ class DebateSession:
         """Execute the full debate protocol. Returns artifact pack dict."""
         log.info("=== AO Session %s started ===", self.session_id)
         log.info("Question: %s", self.question[:200])
-        log.info("Model: %s, Timeout: %ds", self.model, self.timeout)
+        log.info("Model: %s, Alpha timeout: %ds (max_turns=%d), Omega timeout: %ds",
+                 self.model, self.alpha_timeout, self.alpha_max_turns, self.omega_timeout)
 
         # Phase 1: Build context
         phase_start = time.time()
@@ -250,10 +257,12 @@ class DebateSession:
 
         log.info("Requesting blind memo from %s...", role)
         if role == "Alpha":
-            result = run_alpha(prompt, timeout=self.timeout, model=self.model,
-                               work_dir=self.project_dir, phase="blind_memo")
+            result = run_alpha(prompt, timeout=self.alpha_timeout, model=self.model,
+                               work_dir=self.project_dir,
+                               max_turns=self.alpha_max_turns,
+                               phase="blind_memo")
         else:
-            result = run_omega(prompt, timeout=self.timeout,
+            result = run_omega(prompt, timeout=self.omega_timeout,
                                work_dir=self.project_dir, phase="blind_memo")
 
         self._diagnostics.append(result.to_dict())
@@ -306,10 +315,12 @@ class DebateSession:
 
         log.info("Requesting critique from %s...", role)
         if role == "Alpha":
-            result = run_alpha(prompt, timeout=self.timeout, model=self.model,
-                               work_dir=self.project_dir, phase="critique")
+            result = run_alpha(prompt, timeout=self.alpha_timeout, model=self.model,
+                               work_dir=self.project_dir,
+                               max_turns=self.alpha_max_turns,
+                               phase="critique")
         else:
-            result = run_omega(prompt, timeout=self.timeout,
+            result = run_omega(prompt, timeout=self.omega_timeout,
                                work_dir=self.project_dir, phase="critique")
 
         self._diagnostics.append(result.to_dict())

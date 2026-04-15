@@ -75,6 +75,7 @@ Per-project config in `.alpha-omega/config.json`:
 {
   "alpha_model": "claude-sonnet-4-5",
   "alpha_timeout": 300,
+  "alpha_max_turns": 8,
   "omega_timeout": 600,
   "review_timeout": 180,
   "implement_timeout": 900,
@@ -82,7 +83,9 @@ Per-project config in `.alpha-omega/config.json`:
 }
 ```
 
-CLI flags override config values.
+Per-brain timeouts are honored independently: Omega tends to run longer and gets 600s by default, Alpha gets 300s with up to 8 tool-use turns.
+
+CLI flag precedence: `--alpha-timeout` / `--omega-timeout` (per-brain) > `--timeout` (shared override) > `.alpha-omega/config.json` > defaults.
 
 ## Requirements
 
